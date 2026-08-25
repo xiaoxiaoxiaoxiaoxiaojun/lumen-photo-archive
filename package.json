@@ -19,6 +19,7 @@
     "deploy:api": "wrangler deploy --config cloudflare-api/wrangler.jsonc"
   },
   "dependencies": {
+    "aws4fetch": "^1.0.20",
     "drizzle-orm": "0.45.2",
     "jose": "^6.1.2",
     "react": "19.2.6",

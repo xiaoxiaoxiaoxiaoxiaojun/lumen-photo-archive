@@ -13,11 +13,5 @@
       "database_id": "b5afc2bd-827e-44ef-b981-c2ea634977bb",
       "migrations_dir": "migrations"
     }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "PHOTOS",
-      "bucket_name": "lumen-photos"
-    }
   ]
 }

@@ -186,7 +186,7 @@ export default function App() {
     <header className="site-header">
       <a className="wordmark" href="#top">LU<span>•</span>MEN</a>
       <div className="header-actions">
-        <span className="cloud-status"><i /> GITHUB PAGES · R2 PRIVATE CLOUD</span>
+        <span className="cloud-status"><i /> GITHUB PAGES · B2 PRIVATE CLOUD</span>
         {!user ? (googleClientId ? <div className="google-slot google-slot-header" ref={googleHeaderRef} /> : <span className="setup-pill">等待云端配置</span>) : <div className="account-menu"><span className={`access-badge ${user.isOwner ? "owner" : "viewer"}`}>{user.isOwner ? "主人模式" : "只读访客"}</span>{user.isOwner ? <button className="share-button" type="button" onClick={shareSite}>分享</button> : null}<button className="avatar-button" type="button" onClick={signOut} title="退出登录">{user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : displayName.slice(0, 1)}</button></div>}
       </div>
     </header>
@@ -194,7 +194,7 @@ export default function App() {
     {notice ? <button className="notice" type="button" onClick={() => setNotice("")}>{notice}<span>×</span></button> : null}
 
     <section className={`hero ${user ? "hero-signed-in" : ""}`} id="top">
-      <div className="hero-copy"><p className="eyebrow">PRIVATE PHOTOGRAPHY ARCHIVE / 2026</p><h1>把光，<br />留在云端。</h1><p className="hero-intro">一个安静、私密的摄影空间。收藏旅途与日常，也把珍贵的画面分享给重要的人。</p><div className="hero-meta"><span>{photos.length || "—"} 张云端作品</span><span>R2 私有存储</span><span>访客仅可查看</span></div></div>
+      <div className="hero-copy"><p className="eyebrow">PRIVATE PHOTOGRAPHY ARCHIVE / 2026</p><h1>把光，<br />留在云端。</h1><p className="hero-intro">一个安静、私密的摄影空间。收藏旅途与日常，也把珍贵的画面分享给重要的人。</p><div className="hero-meta"><span>{photos.length || "—"} 张云端作品</span><span>B2 私有存储</span><span>访客仅可查看</span></div></div>
       <div className="hero-frame"><img src={photos[0]?.url || "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1800&q=90"} alt="山谷中的晨雾与光线" />
         {!user ? <div className="login-panel"><span className="lock-mark">⌁</span><p className="login-kicker">PRIVATE ACCESS</p><h2>登录后，进入摄影档案</h2><p>使用 Google 账号登录。朋友只能浏览，上传和删除只属于相册主人。</p>{googleClientId ? <div className="google-slot google-slot-card" ref={googleCardRef} /> : <div className="auth-placeholder">{isConfigured ? "等待 Google 登录配置" : "等待云端 API 配置"}</div>}</div> : <div className="frame-caption"><span>01</span><p>{photos[0]?.title || "清晨，风从山脊经过"}<br /><small>{photos[0] ? `${photos[0].location} / ${photos[0].capturedAt}` : "HOKKAIDO / 2025"}</small></p></div>}
       </div>
@@ -204,7 +204,7 @@ export default function App() {
       {!photos.length ? <p className="demo-label">示例作品 · 主人上传第一张照片后自动替换</p> : null}<div className="photo-grid">{filtered.map((photo, index) => <article className={`photo-card photo-${index % 3}`} key={photo.id}><button className="photo-image" type="button" onClick={() => setSelected(photo)}><img src={photo.url} alt={photo.title} /><span className="photo-index">{String(index + 1).padStart(2, "0")}</span></button><div className="photo-caption"><h3>{photo.title}</h3><p>{photo.location} · {photo.capturedAt}</p></div></article>)}</div></section>
       : <section className="locked-archive"><div><p className="eyebrow">THE ARCHIVE</p><h2>作品已安全收藏</h2><p>完整画质与作品信息仅对 Google 登录访客开放。</p></div><div className="locked-strip">{demoPhotos.map((photo) => <img src={photo.url} alt="" key={photo.id} />)}<span>登录后查看</span></div></section>}
 
-    <footer><a className="wordmark footer-mark" href="#top">LU<span>•</span>MEN</a><p>PRIVATE PHOTOGRAPHY ARCHIVE<br />GITHUB PAGES + CLOUDFLARE R2</p><p>© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
+    <footer><a className="wordmark footer-mark" href="#top">LU<span>•</span>MEN</a><p>PRIVATE PHOTOGRAPHY ARCHIVE<br />GITHUB PAGES + BACKBLAZE B2</p><p>© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
 
     {selected ? <div className="lightbox" role="dialog" aria-modal="true"><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{selected.category} · {selected.location} · {selected.capturedAt}</p></div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => handleDelete(selected)}>删除照片</button> : null}</div></div> : null}
 

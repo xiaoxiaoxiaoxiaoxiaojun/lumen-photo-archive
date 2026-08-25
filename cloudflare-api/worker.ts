@@ -1,12 +1,16 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { AwsClient } from "aws4fetch";
 
 interface Env {
   DB: D1Database;
-  PHOTOS: R2Bucket;
   GOOGLE_CLIENT_ID?: string;
   SESSION_SECRET?: string;
   OWNER_GOOGLE_EMAIL?: string;
   ALLOWED_ORIGIN?: string;
+  B2_KEY_ID?: string;
+  B2_APPLICATION_KEY?: string;
+  B2_ENDPOINT?: string;
+  B2_BUCKET_NAME?: string;
 }
 
 type SessionUser = {
@@ -86,6 +90,7 @@ async function ensureSchema(env: Env) {
       captured_at TEXT NOT NULL DEFAULT '',
       content_type TEXT NOT NULL,
       file_size INTEGER NOT NULL DEFAULT 0,
+      object_version TEXT NOT NULL DEFAULT '',
       owner_sub TEXT NOT NULL,
       created_at INTEGER NOT NULL
     )`),
@@ -95,7 +100,59 @@ async function ensureSchema(env: Env) {
   if (!columns.results.some((column) => column.name === "file_size")) {
     await env.DB.prepare("ALTER TABLE photos ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0").run();
   }
+  if (!columns.results.some((column) => column.name === "object_version")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN object_version TEXT NOT NULL DEFAULT ''").run();
+  }
   schemaReady = true;
+}
+
+function b2Settings(env: Env) {
+  const accessKeyId = (env.B2_KEY_ID || "").trim();
+  const secretAccessKey = (env.B2_APPLICATION_KEY || "").trim();
+  const bucket = (env.B2_BUCKET_NAME || "").trim();
+  const rawEndpoint = (env.B2_ENDPOINT || "").trim().replace(/\/$/, "");
+  if (!accessKeyId || !secretAccessKey || !bucket || !rawEndpoint) throw new Error("B2 storage is not configured");
+  const endpoint = rawEndpoint.startsWith("https://") ? rawEndpoint : `https://${rawEndpoint}`;
+  const regionMatch = new URL(endpoint).hostname.match(/^s3\.([^.]+)\.backblazeb2\.com$/);
+  if (!regionMatch) throw new Error("B2 endpoint is invalid");
+  return {
+    bucket,
+    endpoint,
+    client: new AwsClient({ accessKeyId, secretAccessKey, region: regionMatch[1], service: "s3" }),
+  };
+}
+
+function b2ObjectUrl(env: Env, objectKey: string, versionId?: string) {
+  const { bucket, endpoint } = b2Settings(env);
+  const encodedKey = objectKey.split("/").map(encodeURIComponent).join("/");
+  const url = new URL(`${endpoint}/${encodeURIComponent(bucket)}/${encodedKey}`);
+  if (versionId) url.searchParams.set("versionId", versionId);
+  return url.toString();
+}
+
+async function b2Put(env: Env, objectKey: string, file: File) {
+  const { client } = b2Settings(env);
+  const response = await client.fetch(b2ObjectUrl(env, objectKey), {
+    method: "PUT",
+    headers: { "content-type": file.type },
+    body: file.stream(),
+  });
+  if (!response.ok) throw new Error(`B2 upload failed (${response.status})`);
+  const versionId = response.headers.get("x-amz-version-id") || "";
+  if (!versionId) throw new Error("B2 did not return an object version");
+  return versionId;
+}
+
+async function b2Delete(env: Env, objectKey: string, versionId: string) {
+  if (!versionId) throw new Error("B2 object version is missing");
+  const { client } = b2Settings(env);
+  const response = await client.fetch(b2ObjectUrl(env, objectKey, versionId), { method: "DELETE" });
+  if (!response.ok && response.status !== 404) throw new Error(`B2 delete failed (${response.status})`);
+}
+
+async function b2Get(env: Env, objectKey: string) {
+  const { client } = b2Settings(env);
+  return client.fetch(b2ObjectUrl(env, objectKey), { method: "GET" });
 }
 
 function bytesToBase64Url(bytes: Uint8Array) {
@@ -301,18 +358,20 @@ async function handleApi(request: Request, env: Env) {
     const extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/avif": "avif" }[file.type] || "img";
     const objectKey = `photos/${id}.${extension}`;
     const createdAt = Date.now();
-    await env.PHOTOS.put(objectKey, file.stream(), {
-      httpMetadata: { contentType: file.type },
-      customMetadata: { ownerSub: user.sub },
-    });
+    let objectVersion = "";
+    try {
+      objectVersion = await b2Put(env, objectKey, file);
+    } catch {
+      return json(request, env, { error: "照片云端暂时无法上传，请稍后重试。" }, { status: 502 });
+    }
     try {
       await env.DB.prepare(
         `INSERT INTO photos
-          (id, object_key, title, category, location, captured_at, content_type, file_size, owner_sub, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, objectKey, title, category, location, capturedAt, file.type, file.size, user.sub, createdAt).run();
+          (id, object_key, object_version, title, category, location, captured_at, content_type, file_size, owner_sub, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, objectKey, objectVersion, title, category, location, capturedAt, file.type, file.size, user.sub, createdAt).run();
     } catch (error) {
-      await env.PHOTOS.delete(objectKey);
+      await b2Delete(env, objectKey, objectVersion);
       throw error;
     }
     const photo = await photoFromRow(request, env, { id, title, category, location, captured_at: capturedAt, created_at: createdAt });
@@ -325,10 +384,15 @@ async function handleApi(request: Request, env: Env) {
     if (!user?.isOwner) return json(request, env, { error: "只有相册主人可以删除照片。" }, { status: 403 });
     await ensureSchema(env);
     const id = decodeURIComponent(path.slice("/api/photos/".length));
-    const row = await env.DB.prepare("SELECT object_key FROM photos WHERE id = ?").bind(id).first<{ object_key: string }>();
+    const row = await env.DB.prepare("SELECT object_key, object_version FROM photos WHERE id = ?")
+      .bind(id).first<{ object_key: string; object_version: string }>();
     if (!row) return json(request, env, { error: "没有找到这张照片。" }, { status: 404 });
+    try {
+      await b2Delete(env, row.object_key, row.object_version);
+    } catch {
+      return json(request, env, { error: "照片云端暂时无法删除，请稍后重试。" }, { status: 502 });
+    }
     await env.DB.prepare("DELETE FROM photos WHERE id = ?").bind(id).run();
-    await env.PHOTOS.delete(row.object_key);
     return json(request, env, { ok: true });
   }
 
@@ -344,8 +408,8 @@ async function handleMedia(request: Request, env: Env) {
   const row = await env.DB.prepare("SELECT object_key, content_type FROM photos WHERE id = ?")
     .bind(id).first<{ object_key: string; content_type: string }>();
   if (!row) return new Response("Not found", { status: 404 });
-  const object = await env.PHOTOS.get(row.object_key);
-  if (!object) return new Response("Not found", { status: 404 });
+  const object = await b2Get(env, row.object_key);
+  if (!object.ok || !object.body) return new Response("Not found", { status: object.status === 404 ? 404 : 502 });
   return new Response(object.body, {
     headers: {
       "content-type": row.content_type,
