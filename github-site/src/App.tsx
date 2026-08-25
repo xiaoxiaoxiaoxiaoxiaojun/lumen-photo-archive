@@ -187,7 +187,7 @@ export default function App() {
       <a className="wordmark" href="#top">LU<span>•</span>MEN</a>
       <div className="header-actions">
         <span className="cloud-status"><i /> GITHUB PAGES · R2 PRIVATE CLOUD</span>
-        {!user ? (googleClientId ? <div className="google-slot google-slot-header" ref={googleHeaderRef} /> : <span className="setup-pill">等待云端配置</span>) : <div className="account-menu"><span className={`access-badge ${user.isOwner ? "owner" : "viewer"}`}>{user.isOwner ? "主人模式" : "只读访客"}</span><button className="share-button" type="button" onClick={shareSite}>分享</button><button className="avatar-button" type="button" onClick={signOut} title="退出登录">{user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : displayName.slice(0, 1)}</button></div>}
+        {!user ? (googleClientId ? <div className="google-slot google-slot-header" ref={googleHeaderRef} /> : <span className="setup-pill">等待云端配置</span>) : <div className="account-menu"><span className={`access-badge ${user.isOwner ? "owner" : "viewer"}`}>{user.isOwner ? "主人模式" : "只读访客"}</span>{user.isOwner ? <button className="share-button" type="button" onClick={shareSite}>分享</button> : null}<button className="avatar-button" type="button" onClick={signOut} title="退出登录">{user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : displayName.slice(0, 1)}</button></div>}
       </div>
     </header>
 
