@@ -10,7 +10,7 @@
     {
       "binding": "DB",
       "database_name": "lumen-photo-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "b5afc2bd-827e-44ef-b981-c2ea634977bb",
       "migrations_dir": "migrations"
     }
   ],
