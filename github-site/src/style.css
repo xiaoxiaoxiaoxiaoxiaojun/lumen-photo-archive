@@ -1,0 +1,4 @@
+@import "../../app/globals.css";
+
+.google-button-large { margin-top: 26px; min-width: 220px; justify-content: center; background: white; color: #171713; }
+.google-button:disabled { cursor: not-allowed; opacity: .65; }
