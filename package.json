@@ -10,13 +10,15 @@
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test:security": "node --test tests/cloudflare-api-security.test.ts",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern github-dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "dev:github": "vite --config github.vite.config.ts",
-    "build:github": "vite build --config github.vite.config.ts"
+    "build:github": "vite build --config github.vite.config.ts",
+    "dev:api": "wrangler dev --config cloudflare-api/wrangler.jsonc",
+    "deploy:api": "wrangler deploy --config cloudflare-api/wrangler.jsonc"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
     "drizzle-orm": "0.45.2",
     "jose": "^6.1.2",
     "react": "19.2.6",
@@ -24,6 +26,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "@eslint/js": "9.39.4",
     "@next/eslint-plugin-next": "16.2.6",
     "@openai/sites-vite-plugin": "0.1.0",

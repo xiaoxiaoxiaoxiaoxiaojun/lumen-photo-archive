@@ -1,0 +1,23 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "lumen-photo-api",
+  "main": "worker.ts",
+  "compatibility_date": "2025-04-01",
+  "vars": {
+    "ALLOWED_ORIGIN": "https://REPLACE_WITH_GITHUB_NAME.github.io"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lumen-photo-db",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS",
+      "bucket_name": "lumen-photos"
+    }
+  ]
+}

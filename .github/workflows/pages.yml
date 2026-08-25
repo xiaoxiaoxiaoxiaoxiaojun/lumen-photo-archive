@@ -27,11 +27,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify owner-only write permissions
+        run: npm run test:security
+      - name: Type check
+        run: npx tsc --noEmit
       - name: Build static gallery
         env:
           GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
-          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
         run: npm run build:github
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

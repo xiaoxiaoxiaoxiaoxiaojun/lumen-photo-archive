@@ -37,22 +37,10 @@ type Photo = {
 };
 
 const demoPhotos: Photo[] = [
-  { id: "demo-1", src: "" } as Photo,
-  { id: "demo-2", src: "" } as Photo,
-  { id: "demo-3", src: "" } as Photo,
-].map((item, index) => ({
-  ...item,
-  title: ["旷野来信", "夏夜之后", "城市切面"][index],
-  category: ["旅途", "日常", "城市"][index],
-  location: ["冰岛", "京都", "首尔"][index],
-  capturedAt: ["2025", "2024", "2025"][index],
-  url: [
-    "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=88",
-    "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1400&q=88",
-    "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=1500&q=88",
-  ][index],
-  createdAt: Date.now() - index,
-}));
+  { id: "demo-1", title: "旷野来信", category: "旅途", location: "冰岛", capturedAt: "2025", url: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=88", createdAt: 3 },
+  { id: "demo-2", title: "夏夜之后", category: "日常", location: "京都", capturedAt: "2024", url: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1400&q=88", createdAt: 2 },
+  { id: "demo-3", title: "城市切面", category: "城市", location: "首尔", capturedAt: "2025", url: "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=1500&q=88", createdAt: 1 },
+];
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = (await response.json()) as T & { error?: string };
@@ -278,7 +266,7 @@ export default function GalleryApp() {
       <footer><a className="wordmark footer-mark" href="#top">LU<span>•</span>MEN</a><p>PRIVATE PHOTOGRAPHY ARCHIVE<br />SECURED IN THE CLOUD</p><p>© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
 
       {selected ? (
-        <div className="lightbox" role="dialog" aria-modal="true" aria-label={selected.title} onMouseDown={(event) => event.target === event.currentTarget && setSelected(null)}>
+        <div className="lightbox" role="dialog" aria-modal="true" aria-label={selected.title}>
           <button className="lightbox-close" type="button" onClick={() => setSelected(null)} aria-label="关闭">×</button>
           <img src={selected.url} alt={selected.title} />
           <div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{selected.category} · {selected.location} · {selected.capturedAt}</p></div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => deletePhoto(selected)}>删除照片</button> : null}</div>

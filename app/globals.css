@@ -91,6 +91,10 @@ img { display: block; width: 100%; }
 .google-slot-header { width: 190px; overflow: hidden; border-radius: 999px; }
 .google-slot-card { width: 280px; min-height: 44px; margin-top: 24px; }
 .account-menu { display: flex; align-items: center; gap: 10px; }
+.access-badge, .readonly-note { border: 1px solid rgba(23,23,19,.13); border-radius: 999px; color: var(--muted); font-size: .66rem; letter-spacing: .04em; white-space: nowrap; }
+.access-badge { padding: 10px 13px; }
+.access-badge.owner { border-color: #a6bd38; background: var(--acid); color: var(--ink); }
+.readonly-note { padding: 10px 14px; border-color: rgba(255,255,255,.18); color: #8f9186; }
 .share-button { cursor: pointer; background: white; border-color: rgba(23,23,19,.08); }
 .avatar-button { width: 42px; height: 42px; display: grid; place-items: center; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 50%; background: var(--ink); color: white; cursor: pointer; font-weight: 600; }
 .avatar-button img { width: 100%; height: 100%; object-fit: cover; }
@@ -166,12 +170,14 @@ footer p:last-child { text-align: right; }
 
 @media (max-width: 620px) {
   .setup-pill { max-width: 120px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .access-badge, .share-button { display: none; }
   .hero-signed-in { padding-top: 50px; }
   .login-panel { padding: 30px 20px; }
   .login-panel h2 { font-size: 2.25rem; }
   .archive-heading { display: block; }
   .archive-controls { display: block; }
   .upload-button { margin: 20px 0 0; width: 100%; }
+  .readonly-note { display: block; width: 100%; margin-top: 20px; text-align: center; }
   .photo-card.photo-1 .photo-image, .photo-card.photo-2 .photo-image { margin-top: 0; }
   .locked-archive { padding: 76px 20px; }
   .locked-strip { grid-template-columns: repeat(3, 72vw); }

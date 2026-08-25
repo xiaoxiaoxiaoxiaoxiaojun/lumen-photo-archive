@@ -1,83 +1,123 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import type { User } from "@supabase/supabase-js";
-import { isConfigured, supabase } from "./supabase";
-
-type PhotoRow = {
-  id: string;
-  storage_path: string;
-  title: string;
-  category: string;
-  location: string;
-  captured_at: string;
-  created_at: string;
-};
-
-type Photo = PhotoRow & { url: string };
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  deletePhoto as deleteCloudPhoto,
+  getConfig,
+  getPhotos,
+  isConfigured,
+  loginWithGoogle,
+  logout,
+  restoreUser,
+  uploadPhoto as uploadCloudPhoto,
+  type Photo,
+  type SessionUser,
+} from "./api";
 
 const demoPhotos: Photo[] = [
   ["旷野来信", "旅途", "冰岛", "2025", "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=88"],
   ["夏夜之后", "日常", "京都", "2024", "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1400&q=88"],
   ["城市切面", "城市", "首尔", "2025", "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=1500&q=88"],
-].map(([title, category, location, captured_at, url], index) => ({
+].map(([title, category, location, capturedAt, url], index) => ({
   id: `demo-${index}`,
-  storage_path: "",
   title,
   category,
   location,
-  captured_at,
-  created_at: "",
+  capturedAt,
+  createdAt: 0,
   url,
 }));
 
-function message(error: unknown, fallback: string) {
+let googleScriptPromise: Promise<void> | null = null;
+
+function loadGoogleIdentity() {
+  if (window.google) return Promise.resolve();
+  if (googleScriptPromise) return googleScriptPromise;
+  googleScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[src^="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Google 登录组件加载失败。")), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client?hl=zh_CN";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Google 登录组件加载失败。"));
+    document.head.appendChild(script);
+  });
+  return googleScriptPromise;
+}
+
+function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [isOwner, setIsOwner] = useState(false);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isConfigured);
   const [notice, setNotice] = useState("");
+  const [googleClientId, setGoogleClientId] = useState("");
   const [filter, setFilter] = useState("全部");
   const [selected, setSelected] = useState<Photo | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const googleHeaderRef = useRef<HTMLDivElement>(null);
+  const googleCardRef = useRef<HTMLDivElement>(null);
 
   const loadArchive = useCallback(async () => {
-    const { data: rows, error } = await supabase.from("photos").select("*").order("created_at", { ascending: false });
-    if (error) throw error;
-    const signed = await Promise.all((rows as PhotoRow[]).map(async (row) => {
-      const { data } = await supabase.storage.from("photos").createSignedUrl(row.storage_path, 3600);
-      return { ...row, url: data?.signedUrl || "" };
-    }));
-    setPhotos(signed.filter((photo) => photo.url));
-    const { data: owner } = await supabase.rpc("is_owner");
-    setIsOwner(Boolean(owner));
+    setPhotos(await getPhotos());
   }, []);
 
   useEffect(() => {
-    if (!isConfigured) {
-      setLoading(false);
-      return;
+    let active = true;
+    async function boot() {
+      if (!isConfigured) return;
+      const config = await getConfig();
+      if (!active) return;
+      setGoogleClientId(config.googleClientId);
+      const restored = await restoreUser();
+      if (!active || !restored) return;
+      setUser(restored);
+      await loadArchive();
     }
-    supabase.auth.getSession().then(async ({ data }) => {
-      setUser(data.session?.user || null);
-      if (data.session?.user) await loadArchive();
-    }).catch((error) => setNotice(message(error, "无法连接云端。"))).finally(() => setLoading(false));
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-      window.setTimeout(() => {
-        if (session?.user) loadArchive().catch((error) => setNotice(message(error, "无法读取相册。")));
-        else {
-          setPhotos([]);
-          setIsOwner(false);
-        }
-      }, 0);
-    });
-    return () => listener.subscription.unsubscribe();
+    boot().catch((error) => active && setNotice(errorMessage(error, "无法连接云端。"))).finally(() => active && setLoading(false));
+    return () => { active = false; };
   }, [loadArchive]);
+
+  useEffect(() => {
+    if (!googleClientId || user) return;
+    let active = true;
+    loadGoogleIdentity().then(() => {
+      if (!active || !window.google) return;
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async ({ credential }) => {
+          setLoading(true);
+          try {
+            const signedInUser = await loginWithGoogle(credential);
+            setUser(signedInUser);
+            await loadArchive();
+          } catch (error) {
+            setNotice(errorMessage(error, "Google 登录失败。"));
+          } finally {
+            setLoading(false);
+          }
+        },
+      });
+      const common = { type: "standard", theme: "filled_black", text: "signin_with", shape: "pill", logo_alignment: "left" };
+      if (googleHeaderRef.current) {
+        googleHeaderRef.current.innerHTML = "";
+        window.google.accounts.id.renderButton(googleHeaderRef.current, { ...common, size: "medium", width: 190 });
+      }
+      if (googleCardRef.current) {
+        googleCardRef.current.innerHTML = "";
+        window.google.accounts.id.renderButton(googleCardRef.current, { ...common, size: "large", width: 280 });
+      }
+    }).catch((error) => active && setNotice(errorMessage(error, "Google 登录组件加载失败。")));
+    return () => { active = false; };
+  }, [googleClientId, loadArchive, user]);
 
   useEffect(() => {
     if (!selected) return;
@@ -86,52 +126,47 @@ export default function App() {
     return () => window.removeEventListener("keydown", close);
   }, [selected]);
 
-  async function signIn() {
-    setNotice("");
-    const redirectTo = `${window.location.origin}${import.meta.env.BASE_URL}`;
-    const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
-    if (error) setNotice(error.message);
-  }
-
-  async function uploadPhoto(event: FormEvent<HTMLFormElement>) {
+  async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!user || !isOwner) return;
+    if (!user?.isOwner) return setNotice("当前账号只有查看权限。");
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const file = form.get("file");
+    if (!(file instanceof File) || !file.type.startsWith("image/") || file.size > 20 * 1024 * 1024) {
+      return setNotice("请选择一张不超过 20MB 的图片。");
+    }
     setUploading(true);
-    const form = new FormData(event.currentTarget);
-    const file = form.get("file") as File;
-    let storagePath = "";
     try {
-      if (!file || !file.type.startsWith("image/") || file.size > 20 * 1024 * 1024) throw new Error("请选择一张不超过 20MB 的图片。");
-      const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-      storagePath = `${user.id}/${crypto.randomUUID()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from("photos").upload(storagePath, file, { contentType: file.type, upsert: false });
-      if (uploadError) throw uploadError;
-      const { error: insertError } = await supabase.from("photos").insert({
-        storage_path: storagePath,
-        title: String(form.get("title") || "").trim().slice(0, 80),
-        category: String(form.get("category") || "旅途"),
-        location: String(form.get("location") || "").trim().slice(0, 80),
-        captured_at: String(form.get("capturedAt") || "").trim().slice(0, 20),
-      });
-      if (insertError) throw insertError;
-      await loadArchive();
+      const photo = await uploadCloudPhoto(form);
+      setPhotos((current) => [photo, ...current]);
       setUploadOpen(false);
-      event.currentTarget.reset();
+      formElement.reset();
     } catch (error) {
-      if (storagePath) await supabase.storage.from("photos").remove([storagePath]);
-      setNotice(message(error, "上传失败，请重试。"));
+      setNotice(errorMessage(error, "上传失败，请重试。"));
     } finally {
       setUploading(false);
     }
   }
 
-  async function deletePhoto(photo: Photo) {
-    if (!window.confirm(`确定删除“${photo.title}”吗？`)) return;
-    const { error } = await supabase.from("photos").delete().eq("id", photo.id);
-    if (error) return setNotice(error.message);
-    await supabase.storage.from("photos").remove([photo.storage_path]);
-    setPhotos((current) => current.filter((item) => item.id !== photo.id));
+  async function handleDelete(photo: Photo) {
+    if (!user?.isOwner) return setNotice("当前账号只有查看权限。");
+    if (!window.confirm(`确定删除“${photo.title}”吗？删除后无法恢复。`)) return;
+    try {
+      await deleteCloudPhoto(photo.id);
+      setPhotos((current) => current.filter((item) => item.id !== photo.id));
+      setSelected(null);
+    } catch (error) {
+      setNotice(errorMessage(error, "删除失败，请重试。"));
+    }
+  }
+
+  function signOut() {
+    logout();
+    window.google?.accounts.id.disableAutoSelect();
+    setUser(null);
+    setPhotos([]);
     setSelected(null);
+    setUploadOpen(false);
   }
 
   async function shareSite() {
@@ -145,36 +180,35 @@ export default function App() {
 
   const shown = photos.length ? photos : demoPhotos;
   const filtered = filter === "全部" ? shown : shown.filter((photo) => photo.category === filter);
-  const avatar = user?.user_metadata?.avatar_url as string | undefined;
-  const displayName = (user?.user_metadata?.full_name as string | undefined) || user?.email || "访客";
+  const displayName = user?.name || user?.email || "访客";
 
   return <main>
     <header className="site-header">
       <a className="wordmark" href="#top">LU<span>•</span>MEN</a>
       <div className="header-actions">
-        <span className="cloud-status"><i /> GITHUB PAGES · SECURE CLOUD</span>
-        {!user ? <button className="google-button" type="button" onClick={signIn} disabled={!isConfigured}><b>G</b><span>使用 Google 登录</span></button> : <div className="account-menu"><button className="share-button" type="button" onClick={shareSite}>分享</button><button className="avatar-button" type="button" onClick={() => supabase.auth.signOut()} title="退出登录">{avatar ? <img src={avatar} alt="" referrerPolicy="no-referrer" /> : displayName.slice(0, 1)}</button></div>}
+        <span className="cloud-status"><i /> GITHUB PAGES · R2 PRIVATE CLOUD</span>
+        {!user ? (googleClientId ? <div className="google-slot google-slot-header" ref={googleHeaderRef} /> : <span className="setup-pill">等待云端配置</span>) : <div className="account-menu"><span className={`access-badge ${user.isOwner ? "owner" : "viewer"}`}>{user.isOwner ? "主人模式" : "只读访客"}</span><button className="share-button" type="button" onClick={shareSite}>分享</button><button className="avatar-button" type="button" onClick={signOut} title="退出登录">{user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : displayName.slice(0, 1)}</button></div>}
       </div>
     </header>
 
     {notice ? <button className="notice" type="button" onClick={() => setNotice("")}>{notice}<span>×</span></button> : null}
 
     <section className={`hero ${user ? "hero-signed-in" : ""}`} id="top">
-      <div className="hero-copy"><p className="eyebrow">PRIVATE PHOTOGRAPHY ARCHIVE / 2026</p><h1>把光，<br />留在云端。</h1><p className="hero-intro">一个安静、私密的摄影空间。收藏旅途与日常，也把珍贵的画面分享给重要的人。</p><div className="hero-meta"><span>{photos.length || "—"} 张云端作品</span><span>原画安全存储</span><span>仅登录后可见</span></div></div>
+      <div className="hero-copy"><p className="eyebrow">PRIVATE PHOTOGRAPHY ARCHIVE / 2026</p><h1>把光，<br />留在云端。</h1><p className="hero-intro">一个安静、私密的摄影空间。收藏旅途与日常，也把珍贵的画面分享给重要的人。</p><div className="hero-meta"><span>{photos.length || "—"} 张云端作品</span><span>R2 私有存储</span><span>访客仅可查看</span></div></div>
       <div className="hero-frame"><img src={photos[0]?.url || "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1800&q=90"} alt="山谷中的晨雾与光线" />
-        {!user ? <div className="login-panel"><span className="lock-mark">⌁</span><p className="login-kicker">PRIVATE ACCESS</p><h2>登录后，进入摄影档案</h2><p>使用 Google 账号登录，受邀的朋友也可以安全查看。</p><button className="google-button google-button-large" type="button" onClick={signIn} disabled={!isConfigured}><b>G</b><span>{isConfigured ? "使用 Google 登录" : "等待云端配置"}</span></button></div> : <div className="frame-caption"><span>01</span><p>{photos[0]?.title || "清晨，风从山脊经过"}<br /><small>{photos[0] ? `${photos[0].location} / ${photos[0].captured_at}` : "HOKKAIDO / 2025"}</small></p></div>}
+        {!user ? <div className="login-panel"><span className="lock-mark">⌁</span><p className="login-kicker">PRIVATE ACCESS</p><h2>登录后，进入摄影档案</h2><p>使用 Google 账号登录。朋友只能浏览，上传和删除只属于相册主人。</p>{googleClientId ? <div className="google-slot google-slot-card" ref={googleCardRef} /> : <div className="auth-placeholder">{isConfigured ? "等待 Google 登录配置" : "等待云端 API 配置"}</div>}</div> : <div className="frame-caption"><span>01</span><p>{photos[0]?.title || "清晨，风从山脊经过"}<br /><small>{photos[0] ? `${photos[0].location} / ${photos[0].capturedAt}` : "HOKKAIDO / 2025"}</small></p></div>}
       </div>
     </section>
 
-    {user ? <section className="archive"><div className="archive-heading"><div><p className="eyebrow">THE ARCHIVE</p><h2>摄影档案</h2></div><div className="archive-controls"><nav className="filters">{["全部", "旅途", "城市", "日常"].map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}</nav>{isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}</div></div>
-      {!photos.length ? <p className="demo-label">示例作品 · 主人上传第一张照片后自动替换</p> : null}<div className="photo-grid">{filtered.map((photo, index) => <article className={`photo-card photo-${index % 3}`} key={photo.id}><button className="photo-image" type="button" onClick={() => setSelected(photo)}><img src={photo.url} alt={photo.title} /><span className="photo-index">{String(index + 1).padStart(2, "0")}</span></button><div className="photo-caption"><h3>{photo.title}</h3><p>{photo.location} · {photo.captured_at}</p></div></article>)}</div></section>
-      : <section className="locked-archive"><div><p className="eyebrow">THE ARCHIVE</p><h2>作品已安全收藏</h2><p>完整画质与作品信息仅对登录访客开放。</p></div><div className="locked-strip">{demoPhotos.map((photo) => <img src={photo.url} alt="" key={photo.id} />)}<span>登录后查看</span></div></section>}
+    {user ? <section className="archive"><div className="archive-heading"><div><p className="eyebrow">THE ARCHIVE</p><h2>摄影档案</h2></div><div className="archive-controls"><nav className="filters">{["全部", "旅途", "城市", "日常"].map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}</nav>{user.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : <span className="readonly-note">只读模式 · 无上传与删除权限</span>}</div></div>
+      {!photos.length ? <p className="demo-label">示例作品 · 主人上传第一张照片后自动替换</p> : null}<div className="photo-grid">{filtered.map((photo, index) => <article className={`photo-card photo-${index % 3}`} key={photo.id}><button className="photo-image" type="button" onClick={() => setSelected(photo)}><img src={photo.url} alt={photo.title} /><span className="photo-index">{String(index + 1).padStart(2, "0")}</span></button><div className="photo-caption"><h3>{photo.title}</h3><p>{photo.location} · {photo.capturedAt}</p></div></article>)}</div></section>
+      : <section className="locked-archive"><div><p className="eyebrow">THE ARCHIVE</p><h2>作品已安全收藏</h2><p>完整画质与作品信息仅对 Google 登录访客开放。</p></div><div className="locked-strip">{demoPhotos.map((photo) => <img src={photo.url} alt="" key={photo.id} />)}<span>登录后查看</span></div></section>}
 
-    <footer><a className="wordmark footer-mark" href="#top">LU<span>•</span>MEN</a><p>PRIVATE PHOTOGRAPHY ARCHIVE<br />HOSTED ON GITHUB PAGES</p><p>© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
+    <footer><a className="wordmark footer-mark" href="#top">LU<span>•</span>MEN</a><p>PRIVATE PHOTOGRAPHY ARCHIVE<br />GITHUB PAGES + CLOUDFLARE R2</p><p>© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
 
-    {selected ? <div className="lightbox" role="dialog" aria-modal="true" onMouseDown={(event) => event.target === event.currentTarget && setSelected(null)}><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{selected.category} · {selected.location} · {selected.captured_at}</p></div>{isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => deletePhoto(selected)}>删除照片</button> : null}</div></div> : null}
+    {selected ? <div className="lightbox" role="dialog" aria-modal="true"><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{selected.category} · {selected.location} · {selected.capturedAt}</p></div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => handleDelete(selected)}>删除照片</button> : null}</div></div> : null}
 
-    {uploadOpen ? <div className="modal-backdrop" role="dialog" aria-modal="true"><form className="upload-modal" onSubmit={uploadPhoto}><button className="modal-close" type="button" onClick={() => setUploadOpen(false)}>×</button><p className="eyebrow">ADD TO THE ARCHIVE</p><h2>上传一张新作品</h2><label className="file-drop"><input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/avif" required /><span>选择照片</span><small>JPG、PNG、WebP 或 AVIF，最大 20MB</small></label><div className="form-grid"><label><span>作品名称</span><input name="title" maxLength={80} required /></label><label><span>拍摄地点</span><input name="location" maxLength={80} /></label><label><span>分类</span><select name="category"><option>旅途</option><option>城市</option><option>日常</option></select></label><label><span>拍摄年份</span><input name="capturedAt" maxLength={20} /></label></div><button className="submit-upload" type="submit" disabled={uploading}>{uploading ? "正在上传…" : "上传到云端"}</button></form></div> : null}
+    {uploadOpen && user?.isOwner ? <div className="modal-backdrop" role="dialog" aria-modal="true"><form className="upload-modal" onSubmit={handleUpload}><button className="modal-close" type="button" onClick={() => setUploadOpen(false)}>×</button><p className="eyebrow">ADD TO THE ARCHIVE</p><h2>上传一张新作品</h2><label className="file-drop"><input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/avif" required /><span>选择照片</span><small>JPG、PNG、WebP 或 AVIF，最大 20MB</small></label><div className="form-grid"><label><span>作品名称</span><input name="title" maxLength={80} required /></label><label><span>拍摄地点</span><input name="location" maxLength={80} /></label><label><span>分类</span><select name="category"><option>旅途</option><option>城市</option><option>日常</option></select></label><label><span>拍摄年份</span><input name="capturedAt" maxLength={20} /></label></div><button className="submit-upload" type="submit" disabled={uploading}>{uploading ? "正在上传…" : "上传到云端"}</button></form></div> : null}
     {loading ? <div className="page-loader"><span /></div> : null}
   </main>;
 }

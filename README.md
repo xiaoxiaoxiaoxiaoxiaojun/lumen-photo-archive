@@ -1,100 +1,78 @@
-# vinext-starter
+# LUMEN 摄影档案
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+一个使用 Google 登录的私人摄影网站：
 
-## Prerequisites
+- 网站前端部署在 GitHub Pages。
+- 原图存储在私有 Cloudflare R2 桶中。
+- D1 保存作品名称、地点、分类等信息。
+- 所有访客登录后都可以查看。
+- 只有服务器配置的主人 Google 账号可以上传和删除。
+- 每张照片最大 20MB，总存储达到 9GB 后停止上传，避免超过 R2 的 10GB 免费层。
 
-- Node.js `>=22.13.0`
+## 权限设计
 
-## Quick Start
+前端会为访客隐藏上传、删除入口，但真正的权限检查在 Cloudflare Worker：
+
+- `GET /api/photos`：任意已登录 Google 用户。
+- `POST /api/photos`：仅 `OWNER_GOOGLE_EMAIL` 对应的用户。
+- `DELETE /api/photos/:id`：仅 `OWNER_GOOGLE_EMAIL` 对应的用户。
+- R2 不公开；浏览器拿到的是 6 小时有效的签名图片地址。
+- 跨站写操作只接受 `ALLOWED_ORIGIN` 指定的 GitHub Pages 来源。
+
+因此，访客即使修改网页或手动调用接口，也不能获得上传、删除权限。
+
+## 本地检查
+
+需要 Node.js 22.13 或更高版本。
 
 ```bash
 npm install
-npm run dev
-npm run build
+npm run build:github
+npm run test:security
+npx tsc --noEmit
 ```
 
-This starter does not use `wrangler.jsonc`.
+## Cloudflare 后端部署
 
-## Included Shape
+1. 创建 D1 数据库和 R2 桶：
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+npx wrangler login
+npx wrangler d1 create lumen-photo-db
+npx wrangler r2 bucket create lumen-photos
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+2. 把 D1 命令返回的 ID 填入 `cloudflare-api/wrangler.jsonc`。
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+3. 创建三个加密变量：
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+```bash
+npx wrangler secret put GOOGLE_CLIENT_ID --config cloudflare-api/wrangler.jsonc
+npx wrangler secret put SESSION_SECRET --config cloudflare-api/wrangler.jsonc
+npx wrangler secret put OWNER_GOOGLE_EMAIL --config cloudflare-api/wrangler.jsonc
+```
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+4. 将 GitHub Pages 的来源写入 Worker 普通变量 `ALLOWED_ORIGIN`，例如 `https://your-name.github.io`。来源只包含协议和域名，不包含仓库路径。
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+5. 初始化并部署：
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+```bash
+npx wrangler d1 migrations apply lumen-photo-db --remote --config cloudflare-api/wrangler.jsonc
+npm run deploy:api
+```
 
-## Useful Commands
+## Google 登录配置
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+在 Google Cloud 创建 Web OAuth 客户端，并将 GitHub Pages 来源加入“已获授权的 JavaScript 来源”。把生成的客户端 ID 存入 Cloudflare 的 `GOOGLE_CLIENT_ID`。
 
-## Learn More
+Google 客户端密钥不需要放进网页，也不应提交到 GitHub。
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+## GitHub Pages 部署
+
+1. 创建 GitHub 仓库并推送 `main` 分支。
+2. 在仓库 `Settings → Pages` 中把 Source 设为 `GitHub Actions`。
+3. 在 `Settings → Secrets and variables → Actions → Variables` 新增：
+   - `API_BASE_URL`：已经部署的 Worker 地址，例如 `https://lumen-photo-api.example.workers.dev`
+4. 重新运行 `Deploy LUMEN to GitHub Pages` 工作流。
+
+工作流配置位于 `.github/workflows/pages.yml`。

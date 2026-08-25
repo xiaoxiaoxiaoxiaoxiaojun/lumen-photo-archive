@@ -98,8 +98,13 @@ async function readSession(request: Request, env: Env): Promise<SessionUser | nu
     if (!valid) return null;
     const parsed = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payload))) as SessionPayload;
     if (!parsed.exp || parsed.exp < Date.now() || !parsed.sub) return null;
-    const { exp: _exp, ...user } = parsed;
-    return user;
+    return {
+      sub: parsed.sub,
+      email: parsed.email,
+      name: parsed.name,
+      picture: parsed.picture,
+      isOwner: parsed.isOwner,
+    };
   } catch {
     return null;
   }
