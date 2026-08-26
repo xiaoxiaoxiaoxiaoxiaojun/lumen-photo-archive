@@ -84,7 +84,10 @@ export async function uploadPhoto(form: FormData) {
 }
 
 export async function reverseGeocode(latitude: number, longitude: number) {
-  const query = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) });
+  const query = new URLSearchParams({
+    latitude: String(Number(latitude.toFixed(3))),
+    longitude: String(Number(longitude.toFixed(3))),
+  });
   return request<{ location: string; attribution: string }>(`/api/geocode?${query}`);
 }
 
