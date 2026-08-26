@@ -1,19 +1,19 @@
 # LUMEN 摄影档案
 
-一个使用 Google 登录的私人摄影网站：
+一个公开只读、主人专属管理的摄影网站：
 
 - 网站前端部署在 GitHub Pages。
 - 原图存储在私有 Backblaze B2 桶中。
 - D1 保存作品名称、地点、分类等信息。
-- 所有访客登录后都可以查看。
-- 只有服务器配置的主人 Google 账号可以上传和删除。
+- 任何获得网站链接的访客都可以直接查看，无需登录。
+- 只有服务器配置的主人 Google 账号通过专用管理入口登录后可以上传和删除。
 - 每张照片最大 20MB，总存储达到 9GB 后停止上传，避免超过 B2 的 10GB 免费额度。
 
 ## 权限设计
 
-前端会为访客隐藏上传、删除入口，但真正的权限检查在 Cloudflare Worker：
+公开页面不显示登录、上传或删除入口，真正的写入权限检查在 Cloudflare Worker：
 
-- `GET /api/photos`：任意已登录 Google 用户。
+- `GET /api/photos`：公开只读。
 - `POST /api/photos`：仅 `OWNER_GOOGLE_EMAIL` 对应的用户。
 - `DELETE /api/photos/:id`：仅 `OWNER_GOOGLE_EMAIL` 对应的用户。
 - B2 存储桶不公开；浏览器拿到的是 6 小时有效的签名图片地址。
@@ -35,7 +35,7 @@ npx tsc --noEmit
 ## 免费服务组合
 
 - GitHub Pages：托管网站页面。
-- Cloudflare Workers + D1：验证 Google 登录、保存作品信息并执行主人权限。
+- Cloudflare Workers + D1：验证主人 Google 登录、保存作品信息并执行写入权限。
 - Backblaze B2：10GB 免费文件存储；注册不要求银行卡。
 
 ## Backblaze B2 配置
@@ -80,7 +80,7 @@ npm run deploy:api
 
 ## Google 登录配置
 
-在 Google Cloud 创建 Web OAuth 客户端，并将 GitHub Pages 来源加入“已获授权的 JavaScript 来源”。把生成的客户端 ID 存入 Cloudflare 的 `GOOGLE_CLIENT_ID`。
+在 Google Cloud 创建 Web OAuth 客户端，并将 GitHub Pages 来源加入“已获授权的 JavaScript 来源”。把生成的客户端 ID 存入 Cloudflare 的 `GOOGLE_CLIENT_ID`。Google 登录只用于主人管理入口，普通访客无需登录。
 
 Google 客户端密钥不需要放进网页，也不应提交到 GitHub。
 

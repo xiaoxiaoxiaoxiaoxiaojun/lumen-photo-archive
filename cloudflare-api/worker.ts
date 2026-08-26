@@ -418,8 +418,6 @@ async function handleApi(request: Request, env: Env) {
   }
 
   if (path === "/api/photos" && request.method === "GET") {
-    const user = await readSession(request, env);
-    if (!user) return json(request, env, { error: "请先使用 Google 登录。" }, { status: 401 });
     if (!env.SESSION_SECRET) return json(request, env, { error: "云端尚未配置完成。" }, { status: 503 });
     await ensureSchema(env);
     const result = await env.DB.prepare(

@@ -29,12 +29,13 @@ async function session(email: string, extra: Record<string, unknown> = {}) {
   return `${payload}.${base64Url(signature)}`;
 }
 
-const env = {
+const baseEnv = {
   ALLOWED_ORIGIN: allowedOrigin,
   OWNER_GOOGLE_EMAIL: "owner@example.com",
   SESSION_SECRET: secret,
   GOOGLE_CLIENT_ID: "test-client.apps.googleusercontent.com",
-} as never;
+};
+const env = baseEnv as never;
 
 function apiRequest(path: string, token: string, method = "GET", origin = allowedOrigin) {
   return new Request(`https://api.example.workers.dev${path}`, {
@@ -85,4 +86,34 @@ test("write requests from another origin are rejected before any storage access"
 test("media objects require an unexpired server signature", async () => {
   const response = await worker.fetch(new Request("https://api.example.workers.dev/media/photo-id?exp=1&sig=fake"), env);
   assert.equal(response.status, 403);
+});
+
+test("photo listing is public while anonymous write actions stay blocked", async () => {
+  const columns = [
+    "id", "object_key", "title", "category", "location", "captured_at", "content_type", "file_size",
+    "object_version", "camera", "lens", "technical", "owner_sub", "created_at",
+  ].map((name) => ({ name }));
+  const database = {
+    batch: async () => [],
+    prepare(query: string) {
+      const statement = {
+        bind: () => statement,
+        all: async () => query.startsWith("PRAGMA table_info") ? { results: columns } : { results: [] },
+        first: async () => null,
+        run: async () => ({ success: true }),
+      };
+      return statement;
+    },
+  };
+  const publicEnv = { ...baseEnv, DB: database } as never;
+  const listing = await worker.fetch(new Request("https://api.example.workers.dev/api/photos", {
+    headers: { origin: allowedOrigin },
+  }), publicEnv);
+  assert.equal(listing.status, 200);
+  assert.equal(listing.headers.get("access-control-allow-origin"), allowedOrigin);
+  assert.deepEqual((await listing.json() as { photos: unknown[] }).photos, []);
+
+  const upload = await worker.fetch(apiRequest("/api/photos", "", "POST"), publicEnv);
+  assert.equal(upload.status, 403);
+  assert.match(await upload.text(), /只有相册主人可以上传照片/);
 });
