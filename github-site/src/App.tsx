@@ -266,7 +266,7 @@ export default function App() {
     {notice ? <button className="notice" type="button" onClick={() => setNotice("")}>{notice}<span>×</span></button> : null}
 
     <section className={`hero ${user ? "hero-signed-in" : ""}`} id="top">
-      <div className="hero-copy"><p className="eyebrow">PRIVATE PHOTOGRAPHY ARCHIVE / 2026</p><h1>把光，<br />留在云端。</h1><p className="hero-intro">一个安静、私密的摄影空间。收藏旅途与日常，也把珍贵的画面分享给重要的人。</p><div className="hero-meta"><span>{photos.length || "—"} 张云端作品</span><span>B2 私有存储</span><span>访客仅可查看</span></div></div>
+      <div className="hero-copy"><p className="eyebrow">PRIVATE PHOTOGRAPHY ARCHIVE / 2026</p><h1>把光，<br />留在云端。</h1><p className="hero-intro">一个安静、私密的摄影空间。收藏旅途与日常，也把珍贵的画面分享给重要的人。</p></div>
       <div className="hero-frame"><img src={photos[0]?.url || "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1800&q=90"} alt="山谷中的晨雾与光线" />
         {!user ? <div className="login-panel"><span className="lock-mark">⌁</span><p className="login-kicker">PRIVATE ACCESS</p><h2>登录后，进入摄影档案</h2><p>使用 Google 账号登录。朋友只能浏览，上传和删除只属于相册主人。</p>{googleClientId ? <div className="google-slot google-slot-card" ref={googleCardRef} /> : <div className="auth-placeholder">{isConfigured ? "等待 Google 登录配置" : "等待云端 API 配置"}</div>}</div> : <div className="frame-caption"><span>01</span><p>{photos[0]?.title || "清晨，风从山脊经过"}<br /><small>{photos[0] ? `${photos[0].location || "地点未知"} / ${photos[0].capturedAt || "时间未知"}` : "HOKKAIDO / 2025"}</small></p></div>}
       </div>

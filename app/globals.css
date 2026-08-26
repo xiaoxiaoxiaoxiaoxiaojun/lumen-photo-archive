@@ -29,8 +29,6 @@ img { display: block; width: 100%; }
 .eyebrow { margin: 0 0 28px; font-size: .66rem; letter-spacing: .17em; color: var(--muted); }
 .hero h1 { margin: 0; font-family: var(--font-serif), serif; font-size: clamp(4rem, 7.7vw, 8rem); line-height: .98; font-weight: 400; letter-spacing: -.075em; }
 .hero-intro { max-width: 430px; margin: 40px 0 50px; color: #535149; font-family: var(--font-serif), serif; line-height: 1.9; font-size: .98rem; }
-.hero-meta { display: flex; gap: 12px; flex-wrap: wrap; }
-.hero-meta span { padding: 8px 13px; border: 1px solid var(--line); border-radius: 999px; font-size: .65rem; letter-spacing: .06em; }
 .hero-frame { position: relative; align-self: stretch; min-height: 630px; overflow: hidden; background: #272922; }
 .hero-frame > img { height: 100%; object-fit: cover; filter: saturate(.82); }
 .frame-caption { position: absolute; left: 22px; right: 22px; bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; color: white; mix-blend-mode: difference; }
