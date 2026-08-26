@@ -6,7 +6,9 @@
   "workers_dev": true,
   "preview_urls": false,
   "vars": {
-    "ALLOWED_ORIGIN": "https://xiaoxiaoxiaoxiaoxiaojun.github.io"
+    "ALLOWED_ORIGIN": "https://xiaoxiaoxiaoxiaoxiaojun.github.io",
+    "B2_BUCKET_NAME": "lumen-photo-archive-2026-9a7d3f",
+    "B2_ENDPOINT": "https://s3.us-east-005.backblazeb2.com"
   },
   "d1_databases": [
     {
