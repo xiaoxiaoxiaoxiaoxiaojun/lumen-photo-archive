@@ -34,7 +34,7 @@ jobs:
       - name: Build static gallery
         env:
           GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
-          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+          VITE_API_BASE_URL: https://lumen-photo-api.1515378080.workers.dev
         run: npm run build:github
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

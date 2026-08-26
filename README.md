@@ -88,8 +88,7 @@ Google 客户端密钥不需要放进网页，也不应提交到 GitHub。
 
 1. 创建 GitHub 仓库并推送 `main` 分支。
 2. 在仓库 `Settings → Pages` 中把 Source 设为 `GitHub Actions`。
-3. 在 `Settings → Secrets and variables → Actions → Variables` 新增：
-   - `API_BASE_URL`：已经部署的 Worker 地址，例如 `https://lumen-photo-api.example.workers.dev`
+3. 在 `.github/workflows/pages.yml` 中确认 `VITE_API_BASE_URL` 是已部署的 Worker 地址。
 4. 重新运行 `Deploy LUMEN to GitHub Pages` 工作流。
 
 工作流配置位于 `.github/workflows/pages.yml`。
