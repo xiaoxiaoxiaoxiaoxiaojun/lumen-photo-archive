@@ -11,6 +11,7 @@ interface Env {
   B2_APPLICATION_KEY?: string;
   B2_ENDPOINT?: string;
   B2_BUCKET_NAME?: string;
+  GEOCODING_ENDPOINT?: string;
 }
 
 type SessionUser = {
@@ -29,6 +30,9 @@ type PhotoRow = {
   category: string;
   location: string;
   captured_at: string;
+  camera: string;
+  lens: string;
+  technical: string;
   created_at: number;
 };
 
@@ -91,10 +95,18 @@ async function ensureSchema(env: Env) {
       content_type TEXT NOT NULL,
       file_size INTEGER NOT NULL DEFAULT 0,
       object_version TEXT NOT NULL DEFAULT '',
+      camera TEXT NOT NULL DEFAULT '',
+      lens TEXT NOT NULL DEFAULT '',
+      technical TEXT NOT NULL DEFAULT '',
       owner_sub TEXT NOT NULL,
       created_at INTEGER NOT NULL
     )`),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS photos_created_at_idx ON photos (created_at)"),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS geocode_cache (
+      cache_key TEXT PRIMARY KEY,
+      location TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`),
   ]);
   const columns = await env.DB.prepare("PRAGMA table_info(photos)").all<{ name: string }>();
   if (!columns.results.some((column) => column.name === "file_size")) {
@@ -102,6 +114,15 @@ async function ensureSchema(env: Env) {
   }
   if (!columns.results.some((column) => column.name === "object_version")) {
     await env.DB.prepare("ALTER TABLE photos ADD COLUMN object_version TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!columns.results.some((column) => column.name === "camera")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN camera TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!columns.results.some((column) => column.name === "lens")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN lens TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!columns.results.some((column) => column.name === "technical")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN technical TEXT NOT NULL DEFAULT ''").run();
   }
   schemaReady = true;
 }
@@ -245,9 +266,67 @@ async function photoFromRow(request: Request, env: Env, row: PhotoRow) {
     category: row.category,
     location: row.location,
     capturedAt: row.captured_at,
+    camera: row.camera,
+    lens: row.lens,
+    technical: row.technical,
     createdAt: row.created_at,
     url: await mediaUrl(request, env, row.id),
   };
+}
+
+async function geocodeCacheKey(latitude: number, longitude: number) {
+  const approximateCoordinates = `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(approximateCoordinates));
+  return bytesToBase64Url(new Uint8Array(digest));
+}
+
+function placeName(data: unknown) {
+  if (!data || typeof data !== "object") return "";
+  const result = data as { name?: unknown; display_name?: unknown; address?: Record<string, unknown> };
+  const address = result.address || {};
+  const value = (key: string) => typeof address[key] === "string" ? String(address[key]).trim() : "";
+  const locality = value("city") || value("town") || value("village") || value("municipality") || value("county");
+  const region = value("state") || value("region");
+  const country = value("country");
+  const parts = [...new Set([locality, region, country].filter(Boolean))];
+  if (parts.length) return parts.slice(0, 3).join(" · ").slice(0, 80);
+  if (typeof result.name === "string" && result.name.trim()) return result.name.trim().slice(0, 80);
+  if (typeof result.display_name === "string") return result.display_name.split(",").slice(0, 3).join(" · ").trim().slice(0, 80);
+  return "";
+}
+
+async function reverseLocation(env: Env, latitude: number, longitude: number) {
+  const roundedLatitude = Number(latitude.toFixed(3));
+  const roundedLongitude = Number(longitude.toFixed(3));
+  const cacheKey = await geocodeCacheKey(roundedLatitude, roundedLongitude);
+  const cached = await env.DB.prepare("SELECT location FROM geocode_cache WHERE cache_key = ?")
+    .bind(cacheKey).first<{ location: string }>();
+  if (cached?.location) return cached.location;
+
+  const endpoint = (env.GEOCODING_ENDPOINT || "https://nominatim.openstreetmap.org/reverse").trim();
+  const url = new URL(endpoint);
+  if (url.protocol !== "https:") throw new Error("Geocoding endpoint must use HTTPS");
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("lat", String(roundedLatitude));
+  url.searchParams.set("lon", String(roundedLongitude));
+  url.searchParams.set("zoom", "10");
+  url.searchParams.set("addressdetails", "1");
+  url.searchParams.set("accept-language", "zh-CN");
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/json",
+      "user-agent": "LUMEN-Photo-Archive/1.0 (+https://xiaoxiaoxiaoxiaoxiaojun.github.io/lumen-photo-archive/)",
+      referer: "https://xiaoxiaoxiaoxiaoxiaojun.github.io/lumen-photo-archive/",
+    },
+  });
+  if (!response.ok) throw new Error(`Geocoding failed (${response.status})`);
+  const location = placeName(await response.json());
+  if (!location) return "";
+  await env.DB.prepare(
+    `INSERT INTO geocode_cache (cache_key, location, created_at) VALUES (?, ?, ?)
+     ON CONFLICT(cache_key) DO UPDATE SET location = excluded.location, created_at = excluded.created_at`,
+  ).bind(cacheKey, location, Date.now()).run();
+  return location;
 }
 
 async function verifyMediaSignature(url: URL, env: Env, id: string) {
@@ -318,13 +397,33 @@ async function handleApi(request: Request, env: Env) {
     return json(request, env, { user: await readSession(request, env) });
   }
 
+  if (path === "/api/geocode" && request.method === "GET") {
+    if (!requestOriginAllowed(request, env)) return json(request, env, { error: "地点识别请求未通过安全检查。" }, { status: 403 });
+    const user = await readSession(request, env);
+    if (!user?.isOwner) return json(request, env, { error: "只有相册主人可以识别照片地点。" }, { status: 403 });
+    const latitude = Number(url.searchParams.get("latitude"));
+    const longitude = Number(url.searchParams.get("longitude"));
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      return json(request, env, { error: "照片中的 GPS 信息无效。" }, { status: 400 });
+    }
+    await ensureSchema(env);
+    try {
+      return json(request, env, {
+        location: await reverseLocation(env, latitude, longitude),
+        attribution: "© OpenStreetMap contributors",
+      });
+    } catch {
+      return json(request, env, { error: "地点名称暂时无法识别。" }, { status: 502 });
+    }
+  }
+
   if (path === "/api/photos" && request.method === "GET") {
     const user = await readSession(request, env);
     if (!user) return json(request, env, { error: "请先使用 Google 登录。" }, { status: 401 });
     if (!env.SESSION_SECRET) return json(request, env, { error: "云端尚未配置完成。" }, { status: 503 });
     await ensureSchema(env);
     const result = await env.DB.prepare(
-      "SELECT id, title, category, location, captured_at, created_at FROM photos ORDER BY created_at DESC",
+      "SELECT id, title, category, location, captured_at, camera, lens, technical, created_at FROM photos ORDER BY created_at DESC",
     ).all<PhotoRow>();
     const photos = await Promise.all(result.results.map((row) => photoFromRow(request, env, row)));
     return json(request, env, { photos });
@@ -354,6 +453,9 @@ async function handleApi(request: Request, env: Env) {
     const category = cleanText(form.get("category"), 20) || "旅途";
     const location = cleanText(form.get("location"));
     const capturedAt = cleanText(form.get("capturedAt"), 20);
+    const camera = cleanText(form.get("camera"), 120);
+    const lens = cleanText(form.get("lens"), 120);
+    const technical = cleanText(form.get("technical"), 120);
     const id = crypto.randomUUID();
     const extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/avif": "avif" }[file.type] || "img";
     const objectKey = `photos/${id}.${extension}`;
@@ -367,14 +469,14 @@ async function handleApi(request: Request, env: Env) {
     try {
       await env.DB.prepare(
         `INSERT INTO photos
-          (id, object_key, object_version, title, category, location, captured_at, content_type, file_size, owner_sub, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, objectKey, objectVersion, title, category, location, capturedAt, file.type, file.size, user.sub, createdAt).run();
+          (id, object_key, object_version, title, category, location, captured_at, camera, lens, technical, content_type, file_size, owner_sub, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, objectKey, objectVersion, title, category, location, capturedAt, camera, lens, technical, file.type, file.size, user.sub, createdAt).run();
     } catch (error) {
       await b2Delete(env, objectKey, objectVersion);
       throw error;
     }
-    const photo = await photoFromRow(request, env, { id, title, category, location, captured_at: capturedAt, created_at: createdAt });
+    const photo = await photoFromRow(request, env, { id, title, category, location, captured_at: capturedAt, camera, lens, technical, created_at: createdAt });
     return json(request, env, { photo }, { status: 201 });
   }
 

@@ -12,6 +12,9 @@ export type Photo = {
   category: string;
   location: string;
   capturedAt: string;
+  camera?: string;
+  lens?: string;
+  technical?: string;
   createdAt: number;
   url: string;
 };
@@ -78,6 +81,11 @@ export async function getPhotos() {
 
 export async function uploadPhoto(form: FormData) {
   return (await request<{ photo: Photo }>("/api/photos", { method: "POST", body: form })).photo;
+}
+
+export async function reverseGeocode(latitude: number, longitude: number) {
+  const query = new URLSearchParams({ latitude: String(latitude), longitude: String(longitude) });
+  return request<{ location: string; attribution: string }>(`/api/geocode?${query}`);
 }
 
 export async function deletePhoto(id: string) {

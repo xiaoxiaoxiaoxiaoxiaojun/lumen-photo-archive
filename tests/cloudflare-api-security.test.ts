@@ -61,6 +61,10 @@ test("viewer session is always read-only even if its payload contains isOwner", 
   const remove = await worker.fetch(apiRequest("/api/photos/photo-id", token, "DELETE"), env);
   assert.equal(remove.status, 403);
   assert.match(await remove.text(), /只有相册主人可以删除照片/);
+
+  const geocode = await worker.fetch(apiRequest("/api/geocode?latitude=31.23&longitude=121.47", token), env);
+  assert.equal(geocode.status, 403);
+  assert.match(await geocode.text(), /只有相册主人可以识别照片地点/);
 });
 
 test("owner permission is derived from the server-side email setting", async () => {
