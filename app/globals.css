@@ -27,7 +27,7 @@ img { display: block; width: 100%; }
 .hero h1 { margin: 0; font-family: var(--font-serif), serif; font-size: clamp(4rem, 7.7vw, 8rem); line-height: .98; font-weight: 400; letter-spacing: -.075em; }
 .hero-intro { max-width: 430px; margin: 40px 0 50px; color: #535149; font-family: var(--font-serif), serif; line-height: 1.9; font-size: .98rem; }
 .hero-frame { position: relative; align-self: stretch; min-height: 630px; overflow: hidden; background: #272922; }
-.hero-frame > img { height: 100%; object-fit: cover; filter: saturate(.82); }
+.hero-video { display: block; width: 100%; height: 100%; object-fit: cover; filter: saturate(.82); }
 .frame-caption { position: absolute; left: 22px; right: 22px; bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; color: white; mix-blend-mode: difference; }
 .frame-caption > span { border: 1px solid rgba(255,255,255,.65); border-radius: 50%; width: 36px; height: 36px; display: grid; place-items: center; font-size: .7rem; }
 .frame-caption p { margin: 0; text-align: right; font-family: var(--font-serif), serif; line-height: 1.45; }

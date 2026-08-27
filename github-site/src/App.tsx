@@ -72,6 +72,7 @@ export default function App() {
   const googleCardRef = useRef<HTMLDivElement>(null);
   const analysisIdRef = useRef(0);
   const [manageMode] = useState(() => new URLSearchParams(window.location.search).get("manage") === "1");
+  const [heroMotionEnabled] = useState(() => !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   const loadArchive = useCallback(async () => {
     setPhotos(await getPhotos());
@@ -268,8 +269,21 @@ export default function App() {
 
     <section className="hero hero-signed-in" id="top">
       <div className="hero-copy"><p className="eyebrow">PRIVATE PHOTOGRAPHY ARCHIVE / 2026</p><h1>把光，<br />留在云端。</h1><p className="hero-intro">一个安静、私密的摄影空间。收藏旅途与日常，也把珍贵的画面分享给重要的人。</p></div>
-      <div className="hero-frame"><img src={photos[0]?.url || "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1800&q=90"} alt="山谷中的晨雾与光线" />
-        <div className="frame-caption"><span>01</span><p>{photos[0]?.title || "清晨，风从山脊经过"}<br /><small>{photos[0] ? `${photos[0].location || "地点未知"} / ${photos[0].capturedAt || "时间未知"}` : "HOKKAIDO / 2025"}</small></p></div>
+      <div className="hero-frame">
+        <video
+          className="hero-video"
+          autoPlay={heroMotionEnabled}
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          poster={`${import.meta.env.BASE_URL}media/lumen-hero-poster.jpg`}
+          aria-label="光影中的人物剪影"
+        >
+          <source src={`${import.meta.env.BASE_URL}media/lumen-hero.mp4`} type="video/mp4" />
+          你的浏览器暂不支持视频播放。
+        </video>
+        <div className="frame-caption"><span>01</span><p>光流过，记忆留下<br /><small>A MEMORY IN MOTION / 2026</small></p></div>
       </div>
     </section>
 
