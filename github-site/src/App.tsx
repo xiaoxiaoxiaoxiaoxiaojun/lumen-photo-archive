@@ -287,7 +287,7 @@ export default function App() {
           poster={`${import.meta.env.BASE_URL}media/lumen-hero-poster.jpg`}
           aria-label="光影中的人物剪影"
         >
-          <source src={`${import.meta.env.BASE_URL}media/lumen-hero.mp4`} type="video/mp4" />
+          <source src={`${import.meta.env.BASE_URL}media/lumen-hero-clean.mp4`} type="video/mp4" />
           你的浏览器暂不支持视频播放。
         </video>
         <div className="frame-caption"><p>光流过，记忆留下<br /><small>A MEMORY IN MOTION / 2026</small></p></div>
