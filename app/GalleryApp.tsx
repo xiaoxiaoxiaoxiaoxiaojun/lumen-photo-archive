@@ -49,6 +49,17 @@ function displayCategory(category: string) {
   return "摄影";
 }
 
+function sizeMasonryCard(image: HTMLImageElement) {
+  const card = image.closest<HTMLElement>(".photo-card");
+  const grid = card?.parentElement;
+  if (!card || !grid) return;
+  const styles = window.getComputedStyle(grid);
+  const rowHeight = Number.parseFloat(styles.gridAutoRows) || 4;
+  const rowGap = Number.parseFloat(styles.rowGap) || 0;
+  const span = Math.ceil((card.getBoundingClientRect().height + rowGap) / (rowHeight + rowGap));
+  card.style.gridRowEnd = `span ${span}`;
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   const data = (await response.json()) as T & { error?: string };
   if (!response.ok) throw new Error(data.error || "请求失败，请稍后再试。");
@@ -68,6 +79,21 @@ export default function GalleryApp() {
   const [uploading, setUploading] = useState(false);
   const headerGoogleRef = useRef<HTMLDivElement>(null);
   const cardGoogleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let frame = 0;
+    const resizeCards = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        document.querySelectorAll<HTMLImageElement>(".photo-grid .photo-image img").forEach(sizeMasonryCard);
+      });
+    };
+    window.addEventListener("resize", resizeCards);
+    return () => {
+      window.removeEventListener("resize", resizeCards);
+      cancelAnimationFrame(frame);
+    };
+  }, []);
 
   const loadPhotos = useCallback(async () => {
     const result = await readJson<{ photos: Photo[] }>(await fetch("/api/photos"));
@@ -238,7 +264,7 @@ export default function GalleryApp() {
       </section>
 
       {user ? (
-        <section className="archive" aria-labelledby="archive-title">
+        <section className="archive" id="archive" aria-labelledby="archive-title">
           <div className="archive-heading">
             <div><p className="eyebrow">THE ARCHIVE</p><h2 id="archive-title">摄影档案</h2></div>
             <div className="archive-controls">
@@ -253,7 +279,7 @@ export default function GalleryApp() {
             {filteredPhotos.map((photo, index) => (
               <article className={`photo-card photo-${index % 3}`} key={photo.id}>
                 <button className="photo-image" type="button" onClick={() => setSelected(photo)} aria-label={`查看 ${photo.title}`}>
-                  <img src={photo.url} alt={photo.title} loading={index > 2 ? "lazy" : "eager"} />
+                  <img src={photo.url} alt={photo.title} loading={index > 2 ? "lazy" : "eager"} onLoad={(event) => sizeMasonryCard(event.currentTarget)} />
                 </button>
                 <div className="photo-caption"><h3>{photo.title}</h3><p>{photo.location} · {photo.capturedAt}</p></div>
               </article>
