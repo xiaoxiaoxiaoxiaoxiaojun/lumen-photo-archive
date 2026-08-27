@@ -37,10 +37,17 @@ type Photo = {
 };
 
 const demoPhotos: Photo[] = [
-  { id: "demo-1", title: "旷野来信", category: "旅途", location: "冰岛", capturedAt: "2025", url: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=88", createdAt: 3 },
-  { id: "demo-2", title: "夏夜之后", category: "日常", location: "京都", capturedAt: "2024", url: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1400&q=88", createdAt: 2 },
-  { id: "demo-3", title: "城市切面", category: "城市", location: "首尔", capturedAt: "2025", url: "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=1500&q=88", createdAt: 1 },
+  { id: "demo-1", title: "旷野来信", category: "摄影", location: "冰岛", capturedAt: "2025", url: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=88", createdAt: 3 },
+  { id: "demo-2", title: "夏夜之后", category: "个人", location: "京都", capturedAt: "2024", url: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1400&q=88", createdAt: 2 },
+  { id: "demo-3", title: "林间来客", category: "动物", location: "北海道", capturedAt: "2025", url: "https://images.unsplash.com/photo-1474511320723-9a56873867b5?auto=format&fit=crop&w=1500&q=88", createdAt: 1 },
 ];
+
+const categoryTabs = ["全部", "摄影", "动物", "个人"] as const;
+
+function displayCategory(category: string) {
+  if (category === "动物" || category === "个人") return category;
+  return "摄影";
+}
 
 async function readJson<T>(response: Response): Promise<T> {
   const data = (await response.json()) as T & { error?: string };
@@ -181,7 +188,7 @@ export default function GalleryApp() {
   }
 
   const displayPhotos = photos.length ? photos : demoPhotos;
-  const filteredPhotos = filter === "全部" ? displayPhotos : displayPhotos.filter((photo) => photo.category === filter);
+  const filteredPhotos = filter === "全部" ? displayPhotos : displayPhotos.filter((photo) => displayCategory(photo.category) === filter);
 
   return (
     <main>
@@ -236,7 +243,7 @@ export default function GalleryApp() {
             <div><p className="eyebrow">THE ARCHIVE</p><h2 id="archive-title">摄影档案</h2></div>
             <div className="archive-controls">
               <nav className="filters" aria-label="作品分类">
-                {["全部", "旅途", "城市", "日常"].map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}
+                {categoryTabs.map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}
               </nav>
               {user.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}
             </div>
@@ -269,7 +276,7 @@ export default function GalleryApp() {
         <div className="lightbox" role="dialog" aria-modal="true" aria-label={selected.title}>
           <button className="lightbox-close" type="button" onClick={() => setSelected(null)} aria-label="关闭">×</button>
           <img src={selected.url} alt={selected.title} />
-          <div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{selected.category} · {selected.location} · {selected.capturedAt}</p></div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => deletePhoto(selected)}>删除照片</button> : null}</div>
+          <div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{displayCategory(selected.category)} · {selected.location} · {selected.capturedAt}</p></div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => deletePhoto(selected)}>删除照片</button> : null}</div>
         </div>
       ) : null}
 
@@ -282,7 +289,7 @@ export default function GalleryApp() {
             <div className="form-grid">
               <label><span>作品名称</span><input name="title" maxLength={80} placeholder="例如：清晨的风" required /></label>
               <label><span>拍摄地点</span><input name="location" maxLength={80} placeholder="例如：北海道" /></label>
-              <label><span>分类</span><select name="category" defaultValue="旅途"><option>旅途</option><option>城市</option><option>日常</option></select></label>
+              <label><span>分类</span><select name="category" defaultValue="摄影"><option>摄影</option><option>动物</option><option>个人</option></select></label>
               <label><span>拍摄年份</span><input name="capturedAt" maxLength={20} placeholder="2026" /></label>
             </div>
             <button className="submit-upload" type="submit" disabled={uploading}>{uploading ? "正在安全上传…" : "上传到云端"}</button>

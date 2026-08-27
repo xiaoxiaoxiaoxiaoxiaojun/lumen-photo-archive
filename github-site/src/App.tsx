@@ -15,9 +15,9 @@ import {
 import { extractPhotoMetadata, type PhotoMetadata } from "./photo-metadata";
 
 const demoPhotos: Photo[] = [
-  ["旷野来信", "旅途", "冰岛", "2025", "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=88"],
-  ["夏夜之后", "日常", "京都", "2024", "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1400&q=88"],
-  ["城市切面", "城市", "首尔", "2025", "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=1500&q=88"],
+  ["旷野来信", "摄影", "冰岛", "2025", "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=88"],
+  ["夏夜之后", "个人", "京都", "2024", "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1400&q=88"],
+  ["林间来客", "动物", "北海道", "2025", "https://images.unsplash.com/photo-1474511320723-9a56873867b5?auto=format&fit=crop&w=1500&q=88"],
 ].map(([title, category, location, capturedAt, url], index) => ({
   id: `demo-${index}`,
   title,
@@ -27,6 +27,13 @@ const demoPhotos: Photo[] = [
   createdAt: 0,
   url,
 }));
+
+const categoryTabs = ["全部", "摄影", "动物", "个人"] as const;
+
+function displayCategory(category: string) {
+  if (category === "动物" || category === "个人") return category;
+  return "摄影";
+}
 
 let googleScriptPromise: Promise<void> | null = null;
 
@@ -179,7 +186,7 @@ export default function App() {
       if (analysisId === analysisIdRef.current) {
         setUploadMetadata({
           title: file.name.replace(/\.[^.]+$/, "") || "未命名作品",
-          category: "日常",
+          category: "摄影",
           location: "",
           capturedAt: "",
           camera: "",
@@ -253,7 +260,7 @@ export default function App() {
   }
 
   const shown = photos.length ? photos : demoPhotos;
-  const filtered = filter === "全部" ? shown : shown.filter((photo) => photo.category === filter);
+  const filtered = filter === "全部" ? shown : shown.filter((photo) => displayCategory(photo.category) === filter);
   const displayName = user?.name || user?.email || "访客";
 
   return <main>
@@ -287,12 +294,12 @@ export default function App() {
       </div>
     </section>
 
-    <section className="archive"><div className="archive-heading"><div><p className="eyebrow">THE ARCHIVE</p><h2>摄影档案</h2></div><div className="archive-controls"><nav className="filters">{["全部", "旅途", "城市", "日常"].map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}</nav>{user?.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}</div></div>
+    <section className="archive"><div className="archive-heading"><div><p className="eyebrow">THE ARCHIVE</p><h2>摄影档案</h2></div><div className="archive-controls"><nav className="filters" aria-label="作品分类">{categoryTabs.map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}</nav>{user?.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}</div></div>
       {!photos.length ? <p className="demo-label">示例作品 · 主人上传第一张照片后自动替换</p> : null}<div className="photo-grid">{filtered.map((photo, index) => <article className={`photo-card photo-${index % 3}`} key={photo.id}><button className="photo-image" type="button" onClick={() => setSelected(photo)}><img src={photo.url} alt={photo.title} /><span className="photo-index">{String(index + 1).padStart(2, "0")}</span></button><div className="photo-caption"><h3>{photo.title}</h3><p>{photo.location || "地点未知"} · {photo.capturedAt || "时间未知"}</p></div></article>)}</div></section>
 
     <footer><a className="wordmark footer-mark" href="#top">LU<span>•</span>MEN</a><p>PRIVATE PHOTOGRAPHY ARCHIVE<br />GITHUB PAGES + BACKBLAZE B2</p><p><span className="legal-links"><a href="privacy.html">隐私政策</a> · <a href="terms.html">服务条款</a></span><br />© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
 
-    {selected ? <div className="lightbox" role="dialog" aria-modal="true"><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{selected.category} · {selected.location || "地点未知"} · {selected.capturedAt || "时间未知"}</p>{selected.camera || selected.lens || selected.technical ? <p className="camera-data">{[selected.camera, selected.lens, selected.technical].filter(Boolean).join(" · ")}</p> : null}</div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => handleDelete(selected)}>删除照片</button> : null}</div></div> : null}
+    {selected ? <div className="lightbox" role="dialog" aria-modal="true"><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{displayCategory(selected.category)} · {selected.location || "地点未知"} · {selected.capturedAt || "时间未知"}</p>{selected.camera || selected.lens || selected.technical ? <p className="camera-data">{[selected.camera, selected.lens, selected.technical].filter(Boolean).join(" · ")}</p> : null}</div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => handleDelete(selected)}>删除照片</button> : null}</div></div> : null}
 
     {uploadOpen && user?.isOwner ? <div className="modal-backdrop" role="dialog" aria-modal="true"><form className="upload-modal" onSubmit={handleUpload}><button className="modal-close" type="button" onClick={closeUpload}>×</button><p className="eyebrow">ADD TO THE ARCHIVE</p><h2>上传一张新作品</h2><label className={`file-drop ${uploadPreview ? "has-preview" : ""}`}>{uploadPreview ? <img src={uploadPreview} alt="待上传照片预览" /> : null}<input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={handleFileSelected} required /><span>{uploadPreview ? "更换照片" : "选择照片"}</span><small>{uploadFile ? `${uploadFile.name} · ${(uploadFile.size / 1024 / 1024).toFixed(1)}MB` : "JPG、PNG、WebP 或 AVIF，最大 20MB"}</small></label><section className="metadata-panel" aria-live="polite">{!uploadFile ? <div className="metadata-empty"><strong>选择后自动识别</strong><p>拍摄时间、GPS 地点、相机型号和拍摄参数会自动读取，无需手动填写。</p></div> : analyzing ? <div className="metadata-loading"><i /><div><strong>正在分析照片</strong><p>读取原始拍摄信息与地点名称…</p></div></div> : uploadMetadata ? <><div className="metadata-heading"><span>自动识别完成</span><b>无需填写</b></div><dl><div><dt>作品名称</dt><dd>{uploadMetadata.title}</dd></div><div><dt>拍摄时间</dt><dd>{uploadMetadata.capturedAt || "照片未记录"}</dd></div><div><dt>地点名称</dt><dd>{uploadMetadata.location || "照片没有 GPS 信息"}</dd></div><div><dt>分类</dt><dd>{uploadMetadata.category}</dd></div><div><dt>相机</dt><dd>{uploadMetadata.camera || "照片未记录"}</dd></div><div><dt>拍摄参数</dt><dd>{uploadMetadata.technical || "照片未记录"}</dd></div></dl>{uploadMetadata.geocoded ? <p className="map-credit">地点名称由 <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a> 提供</p> : null}</> : null}</section><button className="submit-upload" type="submit" disabled={uploading || analyzing || !uploadMetadata}>{uploading ? "正在上传…" : analyzing ? "正在识别…" : "上传到云端"}</button></form></div> : null}
     {manageMode && !user ? <div className="modal-backdrop owner-gate" role="dialog" aria-modal="true" aria-labelledby="owner-gate-title"><div className="owner-gate-card"><a className="owner-gate-close" href="./" aria-label="返回公开相册">×</a><p className="eyebrow">OWNER ACCESS</p><h2 id="owner-gate-title">主人管理</h2><p>使用主人 Google 账号验证后，才会显示上传和删除功能。</p>{googleClientId ? <div className="google-slot google-slot-card" ref={googleCardRef} /> : <div className="auth-placeholder">等待管理登录配置</div>}<a className="owner-gate-back" href="./">返回公开相册</a></div></div> : null}

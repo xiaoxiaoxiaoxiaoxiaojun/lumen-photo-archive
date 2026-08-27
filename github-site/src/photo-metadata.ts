@@ -2,7 +2,7 @@ import exifr from "exifr";
 
 export type PhotoMetadata = {
   title: string;
-  category: "旅途" | "城市" | "日常";
+  category: "摄影" | "动物" | "个人";
   location: string;
   capturedAt: string;
   camera: string;
@@ -74,14 +74,14 @@ function technicalSummary(data: ExifData) {
   ].filter(Boolean).join(" · ");
 }
 
-function automaticCategory(data: ExifData, hasGps: boolean): PhotoMetadata["category"] {
-  const searchable = [data.ImageDescription, data.Title, data.Subject, data.Keywords]
+function automaticCategory(data: ExifData, fileName: string): PhotoMetadata["category"] {
+  const searchable = [fileName, data.ImageDescription, data.Title, data.Subject, data.Keywords]
     .map(textValue)
     .join(" ")
     .toLowerCase();
-  if (/city|urban|street|architecture|城市|街头|建筑/.test(searchable)) return "城市";
-  if (hasGps || /travel|trip|journey|landscape|旅行|旅途|风景/.test(searchable)) return "旅途";
-  return "日常";
+  if (/animal|wildlife|pet|cat|dog|bird|horse|动物|宠物|猫|狗|鸟|马/.test(searchable)) return "动物";
+  if (/portrait|selfie|person|people|family|friend|人像|人物|自拍|家人|朋友/.test(searchable)) return "个人";
+  return "摄影";
 }
 
 export async function extractPhotoMetadata(file: File): Promise<PhotoMetadata> {
@@ -100,7 +100,7 @@ export async function extractPhotoMetadata(file: File): Promise<PhotoMetadata> {
 
   return {
     title: embeddedTitle || cleanTitle(file.name),
-    category: automaticCategory(data, hasGps),
+    category: automaticCategory(data, file.name),
     location: "",
     capturedAt: formatDate(data.DateTimeOriginal ?? data.CreateDate ?? data.DateTimeDigitized ?? data.ModifyDate),
     camera: cameraName(data),
