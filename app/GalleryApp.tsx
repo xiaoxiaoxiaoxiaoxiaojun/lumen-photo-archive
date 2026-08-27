@@ -214,7 +214,7 @@ export default function GalleryApp() {
       <section className={`hero ${user ? "hero-signed-in" : ""}`} id="top">
         <div className="hero-copy">
           <p className="eyebrow">PRIVATE PHOTOGRAPHY ARCHIVE / 2026</p>
-          <h1>把光，<br />留在云端。</h1>
+          <h1>让光，替我们记住。</h1>
           <p className="hero-intro">一个安静、私密的摄影空间。收藏旅途与日常，也把珍贵的画面分享给重要的人。</p>
           <div className="hero-meta">
             <span>{photos.length || "—"} 张云端作品</span><span>原画安全存储</span><span>仅登录后可见</span>
