@@ -34,17 +34,15 @@ img { display: block; width: 100%; }
 .frame-caption small { font-family: var(--font-sans), sans-serif; font-size: .58rem; letter-spacing: .13em; opacity: .75; }
 
 .archive { padding: 8vw 3.2vw 10vw; background: #181915; color: #efeee9; }
-.archive-heading { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5vw; }
+.archive-heading { width: min(100%, 1540px); display: flex; justify-content: space-between; align-items: flex-end; margin: 0 auto 5vw; }
 .archive .eyebrow { color: #8f9186; margin-bottom: 14px; }
 .archive h2 { margin: 0; font-family: var(--font-serif), serif; font-size: clamp(2.8rem, 5vw, 5rem); font-weight: 400; letter-spacing: -.06em; }
 .filters { display: flex; gap: 7px; }
 .filters button { border: 1px solid rgba(255,255,255,.2); background: transparent; color: #aaa99f; border-radius: 999px; padding: 9px 18px; font-size: .7rem; cursor: pointer; }
 .filters button.active { background: var(--acid); border-color: var(--acid); color: var(--ink); }
-.photo-grid { display: grid; grid-template-columns: 1.25fr .75fr 1fr; gap: 20px; align-items: start; }
+.photo-grid { width: min(100%, 1540px); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: clamp(28px, 5.2vw, 88px); row-gap: clamp(72px, 7vw, 116px); align-items: start; margin: 0 auto; }
 .photo-image { position: relative; overflow: hidden; background: #2b2c27; }
-.photo-wide .photo-image { aspect-ratio: 4 / 5; }
-.photo-tall .photo-image { aspect-ratio: 3 / 5; margin-top: 7vw; }
-.photo-standard .photo-image { aspect-ratio: 4 / 5.3; margin-top: 2vw; }
+.photo-card .photo-image { aspect-ratio: 3 / 4; }
 .photo-image img { height: 100%; object-fit: cover; transition: transform .7s cubic-bezier(.2,.7,.1,1); }
 .photo-card:hover img { transform: scale(1.025); }
 .photo-index { position: absolute; top: 13px; left: 13px; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: rgba(18,18,16,.7); backdrop-filter: blur(8px); font-size: .64rem; }
@@ -57,7 +55,6 @@ img { display: block; width: 100%; }
   .hero { grid-template-columns: 1fr; padding-top: 11vw; }
   .hero-frame { min-height: 70vh; }
   .photo-grid { grid-template-columns: 1fr 1fr; }
-  .photo-standard { grid-column: 2; }
 }
 
 @media (max-width: 620px) {
@@ -71,8 +68,6 @@ img { display: block; width: 100%; }
   .filters { margin-top: 30px; overflow-x: auto; }
   .filters button { white-space: nowrap; }
   .photo-grid { grid-template-columns: 1fr; gap: 44px; }
-  .photo-tall .photo-image, .photo-standard .photo-image { margin-top: 0; }
-  .photo-standard { grid-column: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
@@ -97,11 +92,8 @@ img { display: block; width: 100%; }
 
 .archive-controls { display: flex; align-items: center; gap: 12px; }
 .upload-button { border-color: var(--acid); background: var(--acid); color: var(--ink); cursor: pointer; white-space: nowrap; }
-.demo-label { margin: -3vw 0 3vw; color: #77796f; font-size: .64rem; letter-spacing: .08em; }
-.photo-card.photo-0 .photo-image { aspect-ratio: 4 / 5; }
-.photo-card.photo-1 .photo-image { aspect-ratio: 3 / 5; margin-top: 7vw; }
-.photo-card.photo-2 .photo-image { aspect-ratio: 4 / 5.3; margin-top: 2vw; }
-.photo-card.photo-3n .photo-image { aspect-ratio: 4 / 5; }
+.demo-label { width: min(100%, 1540px); margin: -3vw auto 3vw; color: #77796f; font-size: .64rem; letter-spacing: .08em; }
+.photo-card[class*="photo-"] .photo-image { aspect-ratio: 3 / 4; margin-top: 0; }
 .photo-image { display: block; width: 100%; padding: 0; border: 0; color: white; cursor: zoom-in; }
 .empty-state { grid-column: 1 / -1; padding: 10vw 0; border-top: 1px solid rgba(255,255,255,.1); text-align: center; color: #77796f; font-family: var(--font-serif), serif; }
 
@@ -178,7 +170,6 @@ footer p:last-child { text-align: right; }
   .archive-controls { display: block; }
   .upload-button { margin: 20px 0 0; width: 100%; }
   .readonly-note { display: block; width: 100%; margin-top: 20px; text-align: center; }
-  .photo-card.photo-1 .photo-image, .photo-card.photo-2 .photo-image { margin-top: 0; }
   footer { min-height: 76px; justify-content: flex-start; padding: 18px 20px; }
   footer p:last-child { text-align: left; }
   .lightbox { padding: 70px 16px 26px; }
