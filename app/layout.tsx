@@ -25,7 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(origin),
     title,
     description,
-    icons: { icon: "/favicon.svg?v=3" },
+    icons: { icon: "/favicon.svg?v=4" },
     openGraph: { title, description, type: "website", images: [{ url: `${origin}/og.png`, width: 1731, height: 909, alt: "LUMEN 私人摄影档案" }] },
     twitter: { card: "summary_large_image", title, description, images: [`${origin}/og.png`] },
   };
