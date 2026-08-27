@@ -29,7 +29,7 @@ img { display: block; width: 100%; }
 .hero h1 { max-width: none; margin: 0 auto; font-family: var(--font-serif), serif; font-size: clamp(3.6rem, 6.2vw, 6rem); line-height: .98; font-weight: 400; letter-spacing: -.04em; white-space: nowrap; }
 .hero-intro { max-width: 430px; margin: 36px auto 0; color: rgba(255,255,255,.78); font-family: var(--font-serif), serif; line-height: 1.9; font-size: .98rem; overflow-wrap: anywhere; }
 .hero-frame { position: absolute; z-index: 0; inset: 0; overflow: hidden; background: #172019; }
-.hero-frame::after { position: absolute; z-index: 1; inset: 0; content: ""; pointer-events: none; background: radial-gradient(ellipse at center, rgba(7,10,8,.58) 0%, rgba(7,10,8,.32) 42%, rgba(7,10,8,.2) 72%), linear-gradient(180deg, rgba(6,8,7,.34) 0%, transparent 34%, rgba(6,8,7,.4) 100%); }
+.hero-frame::after { position: absolute; z-index: 1; inset: 0; content: ""; pointer-events: none; background: radial-gradient(ellipse at center, rgba(7,10,8,.68) 0%, rgba(7,10,8,.44) 42%, rgba(7,10,8,.28) 72%), linear-gradient(180deg, rgba(6,8,7,.44) 0%, transparent 34%, rgba(6,8,7,.52) 100%); }
 .hero-video { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; filter: saturate(.86) brightness(.9); }
 .frame-caption { position: absolute; z-index: 2; left: 3.2vw; right: 3.2vw; bottom: 26px; display: flex; justify-content: flex-end; align-items: flex-end; color: white; }
 .frame-caption p { margin: 0; text-align: right; font-family: var(--font-serif), serif; line-height: 1.45; }
@@ -55,7 +55,7 @@ img { display: block; width: 100%; }
   .cloud-status { display: none; }
   .hero { padding-right: 5vw; padding-left: 5vw; }
   .hero-copy { width: min(680px, 88vw); }
-  .hero-frame::after { background: radial-gradient(ellipse at center, rgba(7,10,8,.58) 0%, rgba(7,10,8,.34) 46%, rgba(7,10,8,.2) 74%), linear-gradient(180deg, rgba(6,8,7,.32) 0%, transparent 36%, rgba(6,8,7,.4) 100%); }
+  .hero-frame::after { background: radial-gradient(ellipse at center, rgba(7,10,8,.68) 0%, rgba(7,10,8,.46) 46%, rgba(7,10,8,.28) 74%), linear-gradient(180deg, rgba(6,8,7,.42) 0%, transparent 36%, rgba(6,8,7,.52) 100%); }
   .photo-grid { grid-template-columns: 1fr 1fr; }
 }
 
@@ -65,7 +65,7 @@ img { display: block; width: 100%; }
   .hero-copy { width: 100%; max-width: 480px; }
   .hero h1 { max-width: none; font-size: clamp(2rem, 10vw, 3rem); }
   .hero-intro { width: 100%; max-width: 300px; margin: 26px auto 0; padding: 0 4px; font-size: .88rem; line-height: 1.75; }
-  .hero-frame::after { background: radial-gradient(ellipse at center, rgba(7,10,8,.6) 0%, rgba(7,10,8,.34) 50%, rgba(7,10,8,.2) 76%), linear-gradient(180deg, rgba(6,8,7,.35) 0%, rgba(6,8,7,.08) 32%, rgba(6,8,7,.58) 100%); }
+  .hero-frame::after { background: radial-gradient(ellipse at center, rgba(7,10,8,.7) 0%, rgba(7,10,8,.48) 50%, rgba(7,10,8,.3) 76%), linear-gradient(180deg, rgba(6,8,7,.45) 0%, rgba(6,8,7,.14) 32%, rgba(6,8,7,.66) 100%); }
   .hero-video { object-position: 58% center; }
   .frame-caption { left: 20px; right: 20px; bottom: 18px; }
   .frame-caption p { display: none; }
