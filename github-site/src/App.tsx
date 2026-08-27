@@ -265,7 +265,7 @@ export default function App() {
 
   return <main>
     <header className="site-header">
-      <a className="wordmark" href="#top">LU<span>•</span>MEN</a>
+      <a className="wordmark" href="#top">LU<span>•</span>XIN</a>
       <div className="header-actions">
         <span className="cloud-status"><i /> GITHUB PAGES · B2 PRIVATE CLOUD</span>
         {user?.isOwner ? <div className="account-menu"><span className="access-badge owner">主人模式</span><button className="share-button" type="button" onClick={shareSite}>分享</button><button className="avatar-button" type="button" onClick={signOut} title="退出管理模式">{user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : displayName.slice(0, 1)}</button></div> : null}

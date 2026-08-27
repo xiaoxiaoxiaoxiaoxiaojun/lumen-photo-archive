@@ -193,7 +193,7 @@ export default function GalleryApp() {
   return (
     <main>
       <header className="site-header">
-        <a className="wordmark" href="#top" aria-label="Lumen 首页">LU<span>•</span>MEN</a>
+        <a className="wordmark" href="#top" aria-label="LU XIN 首页">LU<span>•</span>XIN</a>
         <div className="header-actions">
           <span className="cloud-status"><i /> 云端摄影档案</span>
           {!user && clientId ? <div className="google-slot google-slot-header" ref={headerGoogleRef} aria-label="Google 登录" /> : null}
