@@ -270,7 +270,7 @@ export default function GalleryApp() {
         </section>
       )}
 
-      <footer><a className="wordmark footer-mark" href="#top">LU<span>•</span>MEN</a><p>PRIVATE PHOTOGRAPHY ARCHIVE<br />SECURED IN THE CLOUD</p><p>© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
+      <footer><p><span className="legal-links"><a href="privacy.html">隐私政策</a> · <a href="terms.html">服务条款</a></span><br />© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
 
       {selected ? (
         <div className="lightbox" role="dialog" aria-modal="true" aria-label={selected.title}>

@@ -105,11 +105,10 @@ img { display: block; width: 100%; }
 .photo-image { display: block; width: 100%; padding: 0; border: 0; color: white; cursor: zoom-in; }
 .empty-state { grid-column: 1 / -1; padding: 10vw 0; border-top: 1px solid rgba(255,255,255,.1); text-align: center; color: #77796f; font-family: var(--font-serif), serif; }
 
-footer { min-height: 250px; display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end; padding: 70px 3.2vw 35px; border-top: 1px solid var(--line); }
-footer p { margin: 0; color: var(--muted); font-size: .58rem; line-height: 1.7; letter-spacing: .1em; }
+footer { min-height: 88px; display: flex; justify-content: flex-end; align-items: center; padding: 22px 3.2vw; border-top: 1px solid rgba(255,255,255,.1); background: #0d0e0c; color: white; }
+footer p { margin: 0; color: #8f9188; font-size: .58rem; line-height: 1.7; letter-spacing: .1em; }
 footer p:last-child { text-align: right; }
-.legal-links a { color: inherit; text-underline-offset: 3px; }
-.footer-mark { font-size: 1.5rem; }
+.legal-links a { color: #c8c9c1; text-underline-offset: 3px; }
 
 .lightbox { position: fixed; inset: 0; z-index: 100; display: grid; grid-template-rows: minmax(0,1fr) auto; padding: 34px 6vw 28px; background: rgba(13,14,12,.96); color: white; backdrop-filter: blur(20px); }
 .lightbox > img { width: 100%; height: 100%; object-fit: contain; }
@@ -169,8 +168,6 @@ footer p:last-child { text-align: right; }
 @media (max-width: 900px) {
   .archive-heading { align-items: flex-start; gap: 30px; }
   .archive-controls { align-items: flex-end; flex-direction: column-reverse; }
-  footer { grid-template-columns: 1fr 1fr; gap: 36px; }
-  footer p:last-child { grid-column: 1 / -1; text-align: left; }
 }
 
 @media (max-width: 620px) {
@@ -182,7 +179,8 @@ footer p:last-child { text-align: right; }
   .upload-button { margin: 20px 0 0; width: 100%; }
   .readonly-note { display: block; width: 100%; margin-top: 20px; text-align: center; }
   .photo-card.photo-1 .photo-image, .photo-card.photo-2 .photo-image { margin-top: 0; }
-  footer { display: flex; flex-direction: column; align-items: flex-start; padding: 55px 20px 30px; }
+  footer { min-height: 76px; justify-content: flex-start; padding: 18px 20px; }
+  footer p:last-child { text-align: left; }
   .lightbox { padding: 70px 16px 26px; }
   .lightbox-meta { align-items: flex-start; gap: 18px; }
   .upload-modal { padding: 34px 22px 24px; }
