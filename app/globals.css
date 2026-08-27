@@ -36,7 +36,7 @@ img { display: block; width: 100%; }
 .frame-caption p { margin: 0; text-align: right; font-family: var(--font-serif), serif; line-height: 1.45; }
 .frame-caption small { font-family: var(--font-sans), sans-serif; font-size: .58rem; letter-spacing: .13em; opacity: .75; }
 
-.archive { padding: 8vw 3.2vw 10vw; background: #181915; color: #efeee9; }
+.archive { padding: clamp(72px, 4vw, 104px) 3.2vw 10vw; background: #181915; color: #efeee9; }
 .archive-heading { width: min(100%, 1540px); display: flex; justify-content: space-between; align-items: flex-end; margin: 0 auto 5vw; }
 .archive .eyebrow { color: #8f9186; margin-bottom: 14px; }
 .archive h2 { margin: 0; font-family: var(--font-serif), serif; font-size: clamp(2.8rem, 5vw, 5rem); font-weight: 400; letter-spacing: -.06em; }
