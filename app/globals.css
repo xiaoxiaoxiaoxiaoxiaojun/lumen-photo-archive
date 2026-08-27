@@ -24,9 +24,9 @@ img { display: block; width: 100%; }
 
 .hero { position: relative; isolation: isolate; min-height: 100vh; min-height: 100svh; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 110px 3.2vw 72px; background: #172019; color: white; text-align: center; }
 .eyebrow { margin: 0 0 28px; font-size: .66rem; letter-spacing: .17em; color: var(--muted); }
-.hero-copy { position: relative; z-index: 3; width: min(720px, 90vw); min-width: 0; }
+.hero-copy { position: relative; z-index: 3; width: min(1100px, 94vw); min-width: 0; }
 .hero .eyebrow { color: rgba(255,255,255,.68); }
-.hero h1 { max-width: 6.3em; margin: 0 auto; font-family: var(--font-serif), serif; font-size: clamp(4rem, 6.2vw, 6rem); line-height: .98; font-weight: 400; letter-spacing: -.04em; text-wrap: balance; }
+.hero h1 { max-width: none; margin: 0 auto; font-family: var(--font-serif), serif; font-size: clamp(3.6rem, 6.2vw, 6rem); line-height: .98; font-weight: 400; letter-spacing: -.04em; white-space: nowrap; }
 .hero-intro { max-width: 430px; margin: 36px auto 0; color: rgba(255,255,255,.78); font-family: var(--font-serif), serif; line-height: 1.9; font-size: .98rem; overflow-wrap: anywhere; }
 .hero-frame { position: absolute; z-index: 0; inset: 0; overflow: hidden; background: #172019; }
 .hero-frame::after { position: absolute; z-index: 1; inset: 0; content: ""; pointer-events: none; background: radial-gradient(ellipse at center, rgba(7,10,8,.58) 0%, rgba(7,10,8,.32) 42%, rgba(7,10,8,.2) 72%), linear-gradient(180deg, rgba(6,8,7,.34) 0%, transparent 34%, rgba(6,8,7,.4) 100%); }
@@ -65,7 +65,7 @@ img { display: block; width: 100%; }
   .site-header { height: 68px; padding: 0 20px; }
   .hero { min-height: 100vh; min-height: 100svh; align-items: center; padding: 96px 20px 108px; }
   .hero-copy { width: 100%; max-width: 480px; }
-  .hero h1 { max-width: 6em; font-size: clamp(3.2rem, 13.8vw, 4.2rem); }
+  .hero h1 { max-width: none; font-size: clamp(2rem, 10vw, 3rem); }
   .hero-intro { width: 100%; max-width: 300px; margin: 26px auto 0; padding: 0 4px; font-size: .88rem; line-height: 1.75; }
   .hero-frame::after { background: radial-gradient(ellipse at center, rgba(7,10,8,.6) 0%, rgba(7,10,8,.34) 50%, rgba(7,10,8,.2) 76%), linear-gradient(180deg, rgba(6,8,7,.35) 0%, rgba(6,8,7,.08) 32%, rgba(6,8,7,.58) 100%); }
   .hero-video { object-position: 58% center; }
