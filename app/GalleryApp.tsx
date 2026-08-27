@@ -223,7 +223,7 @@ export default function GalleryApp() {
 
         <div className="hero-frame" aria-label="精选摄影作品">
           <img src={photos[0]?.url || "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1800&q=90"} alt="山谷中的晨雾与光线" />
-          <div className="frame-caption"><span>01</span><p>{photos[0]?.title || "清晨，风从山脊经过"}<br /><small>{photos[0] ? `${photos[0].location} / ${photos[0].capturedAt}` : "HOKKAIDO / 2025"}</small></p></div>
+          <div className="frame-caption"><p>{photos[0]?.title || "清晨，风从山脊经过"}<br /><small>{photos[0] ? `${photos[0].location} / ${photos[0].capturedAt}` : "HOKKAIDO / 2025"}</small></p></div>
           {!user ? (
             <div className="login-panel">
               <span className="lock-mark" aria-hidden="true">⌁</span>
@@ -249,13 +249,11 @@ export default function GalleryApp() {
             </div>
           </div>
 
-          {!photos.length ? <p className="demo-label">示例作品 · 上传第一张照片后自动替换</p> : null}
           <div className="photo-grid">
             {filteredPhotos.map((photo, index) => (
               <article className={`photo-card photo-${index % 3}`} key={photo.id}>
                 <button className="photo-image" type="button" onClick={() => setSelected(photo)} aria-label={`查看 ${photo.title}`}>
                   <img src={photo.url} alt={photo.title} loading={index > 2 ? "lazy" : "eager"} />
-                  <span className="photo-index">{String(index + 1).padStart(2, "0")}</span>
                 </button>
                 <div className="photo-caption"><h3>{photo.title}</h3><p>{photo.location} · {photo.capturedAt}</p></div>
               </article>
