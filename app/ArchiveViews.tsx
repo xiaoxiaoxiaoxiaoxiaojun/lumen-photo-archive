@@ -7,7 +7,6 @@ export const archiveViewModes = [
   { id: "default", label: "默认" },
   { id: "list", label: "列表" },
   { id: "gallery", label: "画廊" },
-  { id: "loop", label: "环形" },
   { id: "spiral", label: "螺旋" },
 ] as const;
 
@@ -218,11 +217,10 @@ function ListArchive<T extends ArchivePhoto>({
   );
 }
 
-type OrbitMode = "gallery" | "loop" | "spiral";
+type OrbitMode = "gallery" | "spiral";
 
 const orbitSettings = {
   gallery: { itemWidth: 200, itemHeight: 300, radius: 240, perspective: 660, tiltX: 0, tiltZ: 0, turns: 1 },
-  loop: { itemWidth: 200, itemHeight: 300, radius: 240, perspective: 700, tiltX: -12, tiltZ: -8, turns: 1 },
   spiral: { itemWidth: 180, itemHeight: 270, radius: 230, perspective: 550, tiltX: 0, tiltZ: 0, turns: 3 },
 } as const;
 
@@ -295,7 +293,7 @@ function OrbitArchive<T extends ArchivePhoto>({
         ref={stageRef}
         style={{ "--orbit-perspective": `${settings.perspective}px` } as CSSProperties}
         role="region"
-        aria-label={`${mode === "gallery" ? "画廊" : mode === "loop" ? "环形" : "螺旋"}展示，可使用滚轮浏览`}
+        aria-label={`${mode === "gallery" ? "画廊" : "螺旋"}展示，可使用滚轮浏览`}
       >
         <div className="orbit-scene" style={{ transform: `rotateX(${settings.tiltX}deg) rotateZ(${settings.tiltZ}deg)` }}>
           {Array.from({ length: cardCount }, (_, index) => {
