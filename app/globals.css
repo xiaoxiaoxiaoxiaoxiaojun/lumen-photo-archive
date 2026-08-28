@@ -73,9 +73,9 @@ img { display: block; width: 100%; }
 .photo-grid.is-selecting .photo-card.is-selected img { transform: scale(1.025); filter: brightness(.72); }
 .selection-mark { position: absolute; z-index: 2; top: 12px; right: 12px; width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.8); border-radius: 50%; background: rgba(10,11,9,.55); color: #171713; font-size: .8rem; font-weight: 700; backdrop-filter: blur(8px); }
 .is-selected .selection-mark { border-color: #d7ff32; background: #d7ff32; }
-.photo-caption { display: flex; justify-content: space-between; align-items: baseline; padding-top: 14px; }
-.photo-caption h3 { margin: 0; font-family: var(--font-serif), serif; font-size: 1rem; font-weight: 400; }
-.photo-caption p { display: flex; gap: 13px; margin: 0; color: #888a80; font-size: .62rem; letter-spacing: .08em; }
+.photo-caption { display: grid; gap: 8px; align-content: start; padding-top: 14px; }
+.photo-caption h3 { max-width: 100%; margin: 0; font-family: var(--font-serif), serif; font-size: 1rem; font-weight: 400; line-height: 1.28; }
+.photo-caption p { display: flex; flex-wrap: wrap; gap: 6px 13px; margin: 0; color: #888a80; font-size: .62rem; line-height: 1.45; letter-spacing: .08em; }
 .photo-caption p span:first-child { color: #b4b5ae; }
 
 /* The reference interaction uses a continuously moving project list with a cursor preview. */

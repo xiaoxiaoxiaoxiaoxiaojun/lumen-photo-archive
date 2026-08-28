@@ -47,6 +47,12 @@ function displayCategory(category: string) {
   return "摄影";
 }
 
+function visibleMetadata(value: string) {
+  const normalized = value.trim();
+  if (!normalized || /^(?:未知|地点未知|时间未知|unknown(?:\s+(?:location|time|date))?|n\/a|null|undefined)$/i.test(normalized)) return "";
+  return normalized;
+}
+
 let googleScriptPromise: Promise<void> | null = null;
 
 function loadGoogleIdentity() {
@@ -493,7 +499,7 @@ export default function App() {
 
     <footer><p><span className="legal-links"><a href="privacy.html">隐私政策</a> · <a href="terms.html">服务条款</a></span><br />© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
 
-    {selected ? <div className="lightbox" role="dialog" aria-modal="true"><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{displayCategory(selected.category)} · {selected.location || "地点未知"} · {selected.capturedAt || "时间未知"}</p>{selected.camera || selected.lens || selected.technical ? <p className="camera-data">{[selected.camera, selected.lens, selected.technical].filter(Boolean).join(" · ")}</p> : null}</div>{user?.isOwner && !selected.id.startsWith("demo-") ? <div className="lightbox-actions"><button type="button" onClick={() => setEditingPhoto(selected)}>编辑信息</button><button className="danger" type="button" onClick={() => handleDelete(selected)}>删除照片</button></div> : null}</div></div> : null}
+    {selected ? <div className="lightbox" role="dialog" aria-modal="true"><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{[displayCategory(selected.category), visibleMetadata(selected.location), visibleMetadata(selected.capturedAt)].filter(Boolean).join(" · ")}</p>{selected.camera || selected.lens || selected.technical ? <p className="camera-data">{[selected.camera, selected.lens, selected.technical].filter(Boolean).join(" · ")}</p> : null}</div>{user?.isOwner && !selected.id.startsWith("demo-") ? <div className="lightbox-actions"><button type="button" onClick={() => setEditingPhoto(selected)}>编辑信息</button><button className="danger" type="button" onClick={() => handleDelete(selected)}>删除照片</button></div> : null}</div></div> : null}
 
     {editingPhoto && user?.isOwner ? (
       <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="edit-photo-title">
@@ -552,7 +558,7 @@ export default function App() {
                   {item.status === "uploading" ? <p>正在安全上传到私有云端…</p> : null}
                   {item.status === "error" ? <p className="upload-item-error">{item.error}</p> : null}
                   {item.status === "ready" && item.metadata ? (
-                    <p>{[item.metadata.capturedAt || "时间未知", item.metadata.location || "地点未知", item.metadata.camera].filter(Boolean).join(" · ")}</p>
+                    <p>{[visibleMetadata(item.metadata.capturedAt), visibleMetadata(item.metadata.location), item.metadata.camera].filter(Boolean).join(" · ")}</p>
                   ) : null}
                   <small>{(item.file.size / 1024 / 1024).toFixed(1)}MB · {item.metadata?.category || "正在识别"}</small>
                 </div>

@@ -36,6 +36,12 @@ function canSelect(photo: ArchivePhoto) {
   return !photo.id.startsWith("demo-");
 }
 
+function visibleMetadata(value: string) {
+  const normalized = value.trim();
+  if (!normalized || /^(?:未知|地点未知|时间未知|unknown(?:\s+(?:location|time|date))?|n\/a|null|undefined)$/i.test(normalized)) return "";
+  return normalized;
+}
+
 function sizeMasonryCard(image: HTMLImageElement) {
   const card = image.closest<HTMLElement>(".photo-card");
   const grid = card?.parentElement;
@@ -102,10 +108,14 @@ function MasonryArchive<T extends ArchivePhoto>({
 }
 
 function PhotoCaption<T extends ArchivePhoto>({ photo, displayCategory }: { photo: T; displayCategory: (category: string) => string }) {
+  const location = visibleMetadata(photo.location);
+  const capturedAt = visibleMetadata(photo.capturedAt);
+  const details = [location, capturedAt].filter(Boolean).join(" · ");
+
   return (
     <div className="photo-caption">
       <h3>{photo.title}</h3>
-      <p><span>{displayCategory(photo.category)}</span><span>{photo.location || "地点未知"} · {photo.capturedAt || "时间未知"}</span></p>
+      <p><span>{displayCategory(photo.category)}</span>{details ? <span>{details}</span> : null}</p>
     </div>
   );
 }
@@ -173,6 +183,7 @@ function ListArchive<T extends ArchivePhoto>({
         {repeated.map((photo, index) => {
           const selected = selectedPhotoIds.includes(photo.id);
           const selectable = canSelect(photo);
+          const capturedAt = visibleMetadata(photo.capturedAt);
           return (
             <button
               className={`list-project ${activePhoto?.id === photo.id ? "is-active" : ""} ${selected ? "is-selected" : ""}`}
@@ -187,7 +198,7 @@ function ListArchive<T extends ArchivePhoto>({
             >
               <span className="list-category">{displayCategory(photo.category)}</span>
               <strong>{photo.title}</strong>
-              <span className="list-year">{photo.capturedAt || "时间未知"}</span>
+              {capturedAt ? <span className="list-year">{capturedAt}</span> : <span aria-hidden="true" />}
               {bulkMode && selectable ? <span className="selection-mark" aria-hidden="true">{selected ? "✓" : ""}</span> : null}
             </button>
           );
@@ -200,7 +211,7 @@ function ListArchive<T extends ArchivePhoto>({
           aria-hidden="true"
         >
           <img src={activePhoto.url} alt="" />
-          <span>{activePhoto.location || displayCategory(activePhoto.category)}</span>
+          {visibleMetadata(activePhoto.location) ? <span>{visibleMetadata(activePhoto.location)}</span> : null}
         </div>
       ) : null}
     </div>
@@ -300,6 +311,9 @@ function OrbitArchive<T extends ArchivePhoto>({
             const rotateY = mode === "gallery" ? 0 : -theta + 90;
             const selected = selectedPhotoIds.includes(photo.id);
             const selectable = canSelect(photo);
+            const location = visibleMetadata(photo.location);
+            const capturedAt = visibleMetadata(photo.capturedAt);
+            const frontDetails = [displayCategory(photo.category), capturedAt].filter(Boolean).join(" · ");
             const transform = `translate(-50%, -50%) translate3d(${x.toFixed(3)}px, ${y.toFixed(3)}px, ${z.toFixed(3)}px) rotateY(${rotateY.toFixed(3)}deg)`;
             return (
               <div
@@ -314,8 +328,8 @@ function OrbitArchive<T extends ArchivePhoto>({
                   disabled={bulkMode && !selectable}
                   aria-label={bulkMode ? `${selected ? "取消选择" : "选择"} ${photo.title}` : `查看 ${photo.title}`}
                 >
-                  <span className="orbit-face orbit-front"><img src={photo.url} alt={photo.title} /><span className="orbit-meta"><strong>{photo.title}</strong><small>{displayCategory(photo.category)} · {photo.capturedAt || "时间未知"}</small></span></span>
-                  <span className="orbit-face orbit-back" aria-hidden="true"><img src={photo.url} alt="" /><span className="orbit-meta"><strong>{photo.title}</strong><small>{photo.location || displayCategory(photo.category)}</small></span></span>
+                  <span className="orbit-face orbit-front"><img src={photo.url} alt={photo.title} /><span className="orbit-meta"><strong>{photo.title}</strong><small>{frontDetails}</small></span></span>
+                  <span className="orbit-face orbit-back" aria-hidden="true"><img src={photo.url} alt="" /><span className="orbit-meta"><strong>{photo.title}</strong>{location ? <small>{location}</small> : null}</span></span>
                   {bulkMode && selectable ? <span className="selection-mark" aria-hidden="true">{selected ? "✓" : ""}</span> : null}
                 </button>
               </div>

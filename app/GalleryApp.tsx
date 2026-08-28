@@ -50,6 +50,12 @@ function displayCategory(category: string) {
   return "摄影";
 }
 
+function visibleMetadata(value: string) {
+  const normalized = value.trim();
+  if (!normalized || /^(?:未知|地点未知|时间未知|unknown(?:\s+(?:location|time|date))?|n\/a|null|undefined)$/i.test(normalized)) return "";
+  return normalized;
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   const data = (await response.json()) as T & { error?: string };
   if (!response.ok) throw new Error(data.error || "请求失败，请稍后再试。");
@@ -368,7 +374,7 @@ export default function GalleryApp() {
 
         <div className="hero-frame" aria-label="精选摄影作品">
           <img src={photos[0]?.url || "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1800&q=90"} alt="山谷中的晨雾与光线" />
-          <div className="frame-caption"><p>{photos[0]?.title || "清晨，风从山脊经过"}<br /><small>{photos[0] ? `${photos[0].location} / ${photos[0].capturedAt}` : "HOKKAIDO / 2025"}</small></p></div>
+          <div className="frame-caption"><p>{photos[0]?.title || "清晨，风从山脊经过"}{photos[0] && [visibleMetadata(photos[0].location), visibleMetadata(photos[0].capturedAt)].some(Boolean) ? <><br /><small>{[visibleMetadata(photos[0].location), visibleMetadata(photos[0].capturedAt)].filter(Boolean).join(" / ")}</small></> : !photos[0] ? <><br /><small>HOKKAIDO / 2025</small></> : null}</p></div>
           {!user ? (
             <div className="login-panel">
               <span className="lock-mark" aria-hidden="true">⌁</span>
@@ -428,7 +434,7 @@ export default function GalleryApp() {
         <div className="lightbox" role="dialog" aria-modal="true" aria-label={selected.title}>
           <button className="lightbox-close" type="button" onClick={() => setSelected(null)} aria-label="关闭">×</button>
           <img src={selected.url} alt={selected.title} />
-          <div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{displayCategory(selected.category)} · {selected.location} · {selected.capturedAt}</p></div>{user?.isOwner && !selected.id.startsWith("demo-") ? <div className="lightbox-actions"><button type="button" onClick={() => setEditingPhoto(selected)}>编辑信息</button><button className="danger" type="button" onClick={() => deletePhoto(selected)}>删除照片</button></div> : null}</div>
+          <div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{[displayCategory(selected.category), visibleMetadata(selected.location), visibleMetadata(selected.capturedAt)].filter(Boolean).join(" · ")}</p></div>{user?.isOwner && !selected.id.startsWith("demo-") ? <div className="lightbox-actions"><button type="button" onClick={() => setEditingPhoto(selected)}>编辑信息</button><button className="danger" type="button" onClick={() => deletePhoto(selected)}>删除照片</button></div> : null}</div>
         </div>
       ) : null}
 
