@@ -89,6 +89,11 @@ export default function GalleryApp() {
   const [filter, setFilter] = useState("全部");
   const [viewMode, setViewMode] = useState<ViewMode>("default");
   const [selected, setSelected] = useState<Photo | null>(null);
+  const [editingPhoto, setEditingPhoto] = useState<Photo | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
+  const [deletingBatch, setDeletingBatch] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
@@ -191,6 +196,10 @@ export default function GalleryApp() {
     setUser(null);
     setPhotos([]);
     setAuthReady(false);
+    setSelected(null);
+    setEditingPhoto(null);
+    setBulkMode(false);
+    setSelectedPhotoIds([]);
   }
 
   function selectUploadFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -274,9 +283,86 @@ export default function GalleryApp() {
         headers: { "x-lumen-request": "delete" },
       }));
       setPhotos((current) => current.filter((item) => item.id !== photo.id));
+      setSelectedPhotoIds((current) => current.filter((id) => id !== photo.id));
       setSelected(null);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "删除失败，请重试。");
+    }
+  }
+
+  async function editPhoto(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user?.isOwner || !editingPhoto) return setNotice("当前账号只有查看权限。");
+    const form = new FormData(event.currentTarget);
+    setSavingEdit(true);
+    try {
+      const result = await readJson<{ photo: Photo }>(await fetch(`/api/photos/${encodeURIComponent(editingPhoto.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-lumen-request": "edit" },
+        body: JSON.stringify({
+          title: String(form.get("title") || ""),
+          category: String(form.get("category") || "摄影"),
+          location: String(form.get("location") || ""),
+          capturedAt: String(form.get("capturedAt") || ""),
+        }),
+      }));
+      setPhotos((current) => current.map((photo) => photo.id === result.photo.id ? result.photo : photo));
+      setSelected((current) => current?.id === result.photo.id ? result.photo : current);
+      setEditingPhoto(null);
+      setNotice("照片信息已更新。");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "编辑失败，请重试。");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  function toggleBulkMode() {
+    setBulkMode((current) => !current);
+    setSelectedPhotoIds([]);
+    setSelected(null);
+  }
+
+  function togglePhotoSelection(photo: Photo) {
+    if (photo.id.startsWith("demo-")) return;
+    setSelectedPhotoIds((current) => current.includes(photo.id)
+      ? current.filter((id) => id !== photo.id)
+      : [...current, photo.id]);
+  }
+
+  function toggleAllVisible(visiblePhotos: Photo[]) {
+    const ids = visiblePhotos.filter((photo) => !photo.id.startsWith("demo-")).map((photo) => photo.id);
+    const allSelected = ids.length > 0 && ids.every((id) => selectedPhotoIds.includes(id));
+    setSelectedPhotoIds((current) => allSelected
+      ? current.filter((id) => !ids.includes(id))
+      : [...new Set([...current, ...ids])]);
+  }
+
+  async function batchDeletePhotos() {
+    if (!user?.isOwner) return setNotice("当前账号只有查看权限。");
+    if (!selectedPhotoIds.length) return setNotice("请先选择要删除的照片。");
+    if (!window.confirm(`确定删除选中的 ${selectedPhotoIds.length} 张照片吗？删除后无法恢复。`)) return;
+    setDeletingBatch(true);
+    try {
+      const result = await readJson<{ deletedIds: string[]; failed: Array<{ id: string; error: string }> }>(await fetch("/api/photos/batch-delete", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-lumen-request": "batch-delete" },
+        body: JSON.stringify({ ids: selectedPhotoIds }),
+      }));
+      const deleted = new Set(result.deletedIds);
+      setPhotos((current) => current.filter((photo) => !deleted.has(photo.id)));
+      setSelected((current) => current && deleted.has(current.id) ? null : current);
+      setSelectedPhotoIds((current) => current.filter((id) => !deleted.has(id)));
+      if (result.failed.length) {
+        setNotice(`已删除 ${result.deletedIds.length} 张，${result.failed.length} 张失败，可直接重试。`);
+      } else {
+        setBulkMode(false);
+        setNotice(`已删除 ${result.deletedIds.length} 张照片。`);
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "批量删除失败，请重试。");
+    } finally {
+      setDeletingBatch(false);
     }
   }
 
@@ -291,6 +377,8 @@ export default function GalleryApp() {
 
   const displayPhotos = photos.length ? photos : demoPhotos;
   const filteredPhotos = filter === "全部" ? displayPhotos : displayPhotos.filter((photo) => displayCategory(photo.category) === filter);
+  const manageablePhotos = filteredPhotos.filter((photo) => !photo.id.startsWith("demo-"));
+  const allVisibleSelected = manageablePhotos.length > 0 && manageablePhotos.every((photo) => selectedPhotoIds.includes(photo.id));
 
   return (
     <main>
@@ -355,16 +443,18 @@ export default function GalleryApp() {
                 <nav className="filters" aria-label="作品分类">
                   {categoryTabs.map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}
                 </nav>
-                {user.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}
+                {user.isOwner ? <div className="owner-actions"><button className={`manage-button ${bulkMode ? "active" : ""}`} type="button" onClick={toggleBulkMode} disabled={!photos.length}>{bulkMode ? "退出批量" : "批量管理"}</button><button className="upload-button" type="button" onClick={() => setUploadOpen(true)} disabled={bulkMode}>＋ 上传照片</button></div> : null}
               </div>
             </div>
           </div>
 
-          <div className={`photo-grid view-${viewMode}`}>
+          {bulkMode ? <div className="bulk-toolbar" role="toolbar" aria-label="批量管理照片"><strong>已选择 {selectedPhotoIds.length} 张</strong><div><button type="button" onClick={() => toggleAllVisible(manageablePhotos)} disabled={!manageablePhotos.length}>{allVisibleSelected ? "取消全选" : "全选当前"}</button><button className="bulk-delete-button" type="button" onClick={batchDeletePhotos} disabled={!selectedPhotoIds.length || deletingBatch}>{deletingBatch ? "正在删除…" : "删除选中"}</button></div></div> : null}
+          <div className={`photo-grid view-${viewMode} ${bulkMode ? "is-selecting" : ""}`}>
             {filteredPhotos.map((photo, index) => (
-              <article className={`photo-card photo-${index % 3}`} key={photo.id}>
-                <button className="photo-image" type="button" onClick={() => setSelected(photo)} aria-label={`查看 ${photo.title}`}>
+              <article className={`photo-card photo-${index % 3} ${selectedPhotoIds.includes(photo.id) ? "is-selected" : ""}`} key={photo.id}>
+                <button className="photo-image" type="button" onClick={() => bulkMode ? togglePhotoSelection(photo) : setSelected(photo)} disabled={bulkMode && photo.id.startsWith("demo-")} aria-label={bulkMode ? `${selectedPhotoIds.includes(photo.id) ? "取消选择" : "选择"} ${photo.title}` : `查看 ${photo.title}`} aria-pressed={bulkMode ? selectedPhotoIds.includes(photo.id) : undefined}>
                   <img src={photo.url} alt={photo.title} loading={index > 2 ? "lazy" : "eager"} onLoad={(event) => sizeMasonryCard(event.currentTarget)} />
+                  {bulkMode && !photo.id.startsWith("demo-") ? <span className="selection-mark" aria-hidden="true">{selectedPhotoIds.includes(photo.id) ? "✓" : ""}</span> : null}
                 </button>
                 <div className="photo-caption"><h3>{photo.title}</h3><p><span>{displayCategory(photo.category)}</span><span>{photo.location || "地点未知"} · {photo.capturedAt || "时间未知"}</span></p></div>
               </article>
@@ -385,7 +475,24 @@ export default function GalleryApp() {
         <div className="lightbox" role="dialog" aria-modal="true" aria-label={selected.title}>
           <button className="lightbox-close" type="button" onClick={() => setSelected(null)} aria-label="关闭">×</button>
           <img src={selected.url} alt={selected.title} />
-          <div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{displayCategory(selected.category)} · {selected.location} · {selected.capturedAt}</p></div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => deletePhoto(selected)}>删除照片</button> : null}</div>
+          <div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{displayCategory(selected.category)} · {selected.location} · {selected.capturedAt}</p></div>{user?.isOwner && !selected.id.startsWith("demo-") ? <div className="lightbox-actions"><button type="button" onClick={() => setEditingPhoto(selected)}>编辑信息</button><button className="danger" type="button" onClick={() => deletePhoto(selected)}>删除照片</button></div> : null}</div>
+        </div>
+      ) : null}
+
+      {editingPhoto && user?.isOwner ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="edit-photo-title">
+          <form className="upload-modal edit-photo-modal" onSubmit={editPhoto}>
+            <button className="modal-close" type="button" onClick={() => setEditingPhoto(null)} disabled={savingEdit} aria-label="关闭">×</button>
+            <p className="eyebrow">EDIT THE MEMORY</p><h2 id="edit-photo-title">编辑照片信息</h2>
+            <div className="edit-photo-preview"><img src={editingPhoto.url} alt="" /><div><strong>{editingPhoto.title}</strong><small>照片原图不会被修改</small></div></div>
+            <div className="form-grid edit-form-grid">
+              <label><span>作品名称</span><input name="title" maxLength={80} defaultValue={editingPhoto.title} required /></label>
+              <label><span>拍摄地点</span><input name="location" maxLength={80} defaultValue={editingPhoto.location} /></label>
+              <label><span>分类</span><select name="category" defaultValue={displayCategory(editingPhoto.category)}><option>摄影</option><option>动物</option><option>个人</option></select></label>
+              <label><span>拍摄时间</span><input name="capturedAt" maxLength={20} defaultValue={editingPhoto.capturedAt} /></label>
+            </div>
+            <button className="submit-upload" type="submit" disabled={savingEdit}>{savingEdit ? "正在保存…" : "保存修改"}</button>
+          </form>
         </div>
       ) : null}
 

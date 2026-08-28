@@ -120,7 +120,7 @@ function sessionCookie(value: string, request: Request) {
   return `lumen_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${secure}`;
 }
 
-function cleanText(value: FormDataEntryValue | null, max = 80) {
+function cleanText(value: unknown, max = 80) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
@@ -218,6 +218,61 @@ async function api(request: Request, env: Env): Promise<Response | null> {
       throw error;
     }
     return json({ photo: { id, title, category, location, capturedAt, createdAt, url: `/media/${encodeURIComponent(id)}` } }, { status: 201 });
+  }
+
+  if (path === "/api/photos/batch-delete" && request.method === "POST") {
+    if (!sameOriginWrite(request)) return json({ error: "批量删除请求未通过安全检查。" }, { status: 403 });
+    const user = await readSession(request, env);
+    if (!user?.isOwner) return json({ error: "只有相册主人可以批量删除照片。" }, { status: 403 });
+    const body = await request.json().catch(() => null) as { ids?: unknown } | null;
+    const ids = Array.isArray(body?.ids)
+      ? [...new Set(body.ids.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).map((id) => id.trim()))].slice(0, 100)
+      : [];
+    if (!ids.length) return json({ error: "请选择要删除的照片。" }, { status: 400 });
+    await ensureSchema(env);
+    const deletedIds: string[] = [];
+    const failed: Array<{ id: string; error: string }> = [];
+    for (let offset = 0; offset < ids.length; offset += 5) {
+      const results = await Promise.all(ids.slice(offset, offset + 5).map(async (id) => {
+        const row = await env.DB.prepare("SELECT object_key FROM photos WHERE id = ?").bind(id).first<{ object_key: string }>();
+        if (!row) return { id, error: "没有找到这张照片。" };
+        try {
+          await env.PHOTOS.delete(row.object_key);
+          await env.DB.prepare("DELETE FROM photos WHERE id = ?").bind(id).run();
+          return { id };
+        } catch {
+          return { id, error: "云端暂时无法删除。" };
+        }
+      }));
+      for (const result of results) {
+        if (result.error) failed.push({ id: result.id, error: result.error });
+        else deletedIds.push(result.id);
+      }
+    }
+    return json({ deletedIds, failed });
+  }
+
+  if (path.startsWith("/api/photos/") && request.method === "PATCH") {
+    if (!sameOriginWrite(request)) return json({ error: "编辑请求未通过安全检查。" }, { status: 403 });
+    const user = await readSession(request, env);
+    if (!user?.isOwner) return json({ error: "只有相册主人可以编辑照片。" }, { status: 403 });
+    const id = decodeURIComponent(path.slice("/api/photos/".length));
+    if (!id || id === "batch-delete") return json({ error: "照片编号无效。" }, { status: 400 });
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    if (!body) return json({ error: "没有收到可编辑的信息。" }, { status: 400 });
+    const title = cleanText(body.title);
+    if (!title) return json({ error: "请填写作品名称。" }, { status: 400 });
+    const category = cleanText(body.category, 20);
+    if (!["摄影", "动物", "个人"].includes(category)) return json({ error: "请选择有效的作品分类。" }, { status: 400 });
+    const location = cleanText(body.location);
+    const capturedAt = cleanText(body.capturedAt, 20);
+    await ensureSchema(env);
+    const existing = await env.DB.prepare("SELECT created_at FROM photos WHERE id = ?")
+      .bind(id).first<{ created_at: number }>();
+    if (!existing) return json({ error: "没有找到这张照片。" }, { status: 404 });
+    await env.DB.prepare("UPDATE photos SET title = ?, category = ?, location = ?, captured_at = ? WHERE id = ?")
+      .bind(title, category, location, capturedAt, id).run();
+    return json({ photo: { id, title, category, location, capturedAt, createdAt: existing.created_at, url: `/media/${encodeURIComponent(id)}` } });
   }
 
   if (path.startsWith("/api/photos/") && request.method === "DELETE") {

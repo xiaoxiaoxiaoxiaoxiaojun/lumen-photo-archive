@@ -48,6 +48,16 @@ img { display: block; width: 100%; }
 .view-switcher button.active { color: #f4f3ef; }
 .view-switcher button.active > span { opacity: 1; transform: scale(1); }
 .archive-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+.owner-actions { display: flex; align-items: center; gap: 10px; }
+.manage-button { padding: 10px 15px; border: 1px solid rgba(255,255,255,.22); border-radius: 999px; background: transparent; color: #c4c5bd; font-size: .7rem; cursor: pointer; white-space: nowrap; }
+.manage-button:hover, .manage-button.active { border-color: #d7ff32; color: #d7ff32; }
+.manage-button:disabled, .upload-button:disabled { cursor: default; opacity: .45; }
+.bulk-toolbar { display: flex; width: min(100%, 1540px); margin: -34px auto 28px; padding: 14px 16px; align-items: center; justify-content: space-between; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; background: rgba(255,255,255,.055); color: #e5e5df; }
+.bulk-toolbar strong { font-family: var(--font-serif), serif; font-size: .92rem; font-weight: 400; }
+.bulk-toolbar > div { display: flex; gap: 9px; }
+.bulk-toolbar button { padding: 9px 13px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: transparent; color: #c4c5bd; font-size: .66rem; cursor: pointer; }
+.bulk-toolbar button:disabled { cursor: default; opacity: .45; }
+.bulk-toolbar .bulk-delete-button { border-color: #a9473a; color: #ff9c8d; }
 .filters { display: flex; gap: 7px; }
 .filters button { border: 1px solid rgba(255,255,255,.2); background: transparent; color: #aaa99f; border-radius: 999px; padding: 9px 18px; font-size: .7rem; cursor: pointer; }
 .filters button.active { background: var(--acid); border-color: var(--acid); color: var(--ink); }
@@ -57,6 +67,12 @@ img { display: block; width: 100%; }
 .photo-image { position: relative; overflow: hidden; border-radius: 14px; background: #2b2c27; }
 .photo-image img { height: auto; object-fit: contain; transition: transform .7s cubic-bezier(.2,.7,.1,1); }
 .photo-card:hover img { transform: scale(1.025); }
+.photo-grid.is-selecting .photo-image { cursor: pointer; }
+.photo-grid.is-selecting .photo-image:disabled { cursor: not-allowed; opacity: .45; }
+.photo-grid.is-selecting .photo-card.is-selected .photo-image { box-shadow: 0 0 0 3px #d7ff32; }
+.photo-grid.is-selecting .photo-card.is-selected img { transform: scale(1.025); filter: brightness(.72); }
+.selection-mark { position: absolute; z-index: 2; top: 12px; right: 12px; width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.8); border-radius: 50%; background: rgba(10,11,9,.55); color: #171713; font-size: .8rem; font-weight: 700; backdrop-filter: blur(8px); }
+.is-selected .selection-mark { border-color: #d7ff32; background: #d7ff32; }
 .photo-caption { display: flex; justify-content: space-between; align-items: baseline; padding-top: 14px; }
 .photo-caption h3 { margin: 0; font-family: var(--font-serif), serif; font-size: 1rem; font-weight: 400; }
 .photo-caption p { display: flex; gap: 13px; margin: 0; color: #888a80; font-size: .62rem; letter-spacing: .08em; }
@@ -125,6 +141,9 @@ img { display: block; width: 100%; }
   .view-switcher button { grid-template-columns: 6px auto; gap: 7px; white-space: nowrap; }
   .view-switcher button > span { width: 6px; height: 6px; }
   .archive-actions { align-items: stretch; }
+  .owner-actions { align-items: stretch; flex-direction: column-reverse; }
+  .manage-button, .owner-actions .upload-button { width: 100%; margin: 0; }
+  .bulk-toolbar { margin-top: -22px; }
   .filters { overflow-x: auto; }
   .filters button { white-space: nowrap; }
   .photo-grid.view-default, .photo-grid.view-gallery, .photo-grid.view-spiral { grid-template-columns: 1fr; }
@@ -175,6 +194,8 @@ footer p:last-child { text-align: right; }
 .lightbox-meta p { margin: 6px 0 0; color: #8f9188; font-size: .7rem; }
 .lightbox-meta .camera-data { max-width: 720px; color: #c4c5bd; line-height: 1.6; }
 .lightbox-meta button { padding: 9px 14px; border: 1px solid rgba(255,255,255,.22); border-radius: 999px; background: transparent; color: #bbb; font-size: .68rem; cursor: pointer; }
+.lightbox-actions { display: flex; gap: 9px; }
+.lightbox-actions .danger { border-color: rgba(201,77,61,.58); color: #ee9d91; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; padding: 24px; background: rgba(13,14,12,.76); backdrop-filter: blur(12px); }
 .owner-gate-card { position: relative; width: min(440px, 100%); padding: 48px 42px 40px; background: var(--paper); color: var(--ink); text-align: center; box-shadow: 0 30px 80px rgba(0,0,0,.3); }
@@ -236,6 +257,13 @@ footer p:last-child { text-align: right; }
 .simple-upload-list span, .simple-upload-list small { color: var(--muted); font-size: .6rem; }
 .simple-upload-list strong { overflow: hidden; font-family: var(--font-serif), serif; font-size: .8rem; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .simple-upload-list button { width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; }
+.edit-photo-modal { width: min(760px, 100%); }
+.edit-photo-preview { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 16px; margin: -10px 0 26px; padding: 10px; border: 1px solid var(--line); background: rgba(255,255,255,.28); }
+.edit-photo-preview img { width: 76px; height: 64px; object-fit: cover; }
+.edit-photo-preview strong, .edit-photo-preview small { display: block; }
+.edit-photo-preview strong { overflow: hidden; font-family: var(--font-serif), serif; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.edit-photo-preview small { margin-top: 5px; color: var(--muted); font-size: .62rem; }
+.edit-form-grid .full-width { grid-column: 1 / -1; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .form-grid label { display: grid; gap: 8px; }
 .form-grid label > span { color: var(--muted); font-size: .65rem; }
@@ -257,11 +285,16 @@ footer p:last-child { text-align: right; }
   .hero-signed-in { padding-top: 50px; }
   .archive-heading { display: block; }
   .upload-button { margin: 20px 0 0; width: 100%; }
+  .owner-actions .upload-button { margin: 0; }
   .readonly-note { display: block; width: 100%; margin-top: 20px; text-align: center; }
   footer { min-height: 76px; justify-content: flex-start; padding: 18px 20px; }
   footer p:last-child { text-align: left; }
   .lightbox { padding: 70px 16px 26px; }
   .lightbox-meta { align-items: flex-start; gap: 18px; }
+  .lightbox-actions { flex-direction: column; }
+  .bulk-toolbar { align-items: flex-start; gap: 12px; flex-direction: column; margin-bottom: 22px; }
+  .bulk-toolbar > div { width: 100%; }
+  .bulk-toolbar button { flex: 1; }
   .upload-modal { padding: 34px 22px 24px; }
   .owner-gate-card { padding: 48px 22px 34px; }
   .file-drop.has-preview { min-height: 210px; }

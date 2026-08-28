@@ -19,6 +19,12 @@ export type Photo = {
   url: string;
 };
 
+export type PhotoChanges = Pick<Photo, "title" | "category" | "location" | "capturedAt"> & {
+  camera?: string;
+  lens?: string;
+  technical?: string;
+};
+
 type ApiError = { error?: string };
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
@@ -93,4 +99,20 @@ export async function reverseGeocode(latitude: number, longitude: number) {
 
 export async function deletePhoto(id: string) {
   await request<{ ok: true }>(`/api/photos/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function updatePhoto(id: string, changes: PhotoChanges) {
+  return (await request<{ photo: Photo }>(`/api/photos/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(changes),
+  })).photo;
+}
+
+export async function deletePhotos(ids: string[]) {
+  return request<{ deletedIds: string[]; failed: Array<{ id: string; error: string }> }>("/api/photos/batch-delete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
 }

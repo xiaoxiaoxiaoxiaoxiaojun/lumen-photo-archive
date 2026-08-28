@@ -37,11 +37,13 @@ const baseEnv = {
 };
 const env = baseEnv as never;
 
-function apiRequest(path: string, token: string, method = "GET", origin = allowedOrigin) {
+function apiRequest(path: string, token: string, method = "GET", origin = allowedOrigin, body?: BodyInit) {
   return new Request(`https://api.example.workers.dev${path}`, {
     method,
+    body,
     headers: {
       authorization: `Bearer ${token}`,
+      ...(body ? { "content-type": "application/json" } : {}),
       origin,
       "x-lumen-request": "1",
     },
@@ -62,6 +64,14 @@ test("viewer session is always read-only even if its payload contains isOwner", 
   const remove = await worker.fetch(apiRequest("/api/photos/photo-id", token, "DELETE"), env);
   assert.equal(remove.status, 403);
   assert.match(await remove.text(), /只有相册主人可以删除照片/);
+
+  const edit = await worker.fetch(apiRequest("/api/photos/photo-id", token, "PATCH"), env);
+  assert.equal(edit.status, 403);
+  assert.match(await edit.text(), /只有相册主人可以编辑照片/);
+
+  const batchDelete = await worker.fetch(apiRequest("/api/photos/batch-delete", token, "POST"), env);
+  assert.equal(batchDelete.status, 403);
+  assert.match(await batchDelete.text(), /只有相册主人可以批量删除照片/);
 
   const geocode = await worker.fetch(apiRequest("/api/geocode?latitude=31.23&longitude=121.47", token), env);
   assert.equal(geocode.status, 403);
@@ -116,4 +126,57 @@ test("photo listing is public while anonymous write actions stay blocked", async
   const upload = await worker.fetch(apiRequest("/api/photos", "", "POST"), publicEnv);
   assert.equal(upload.status, 403);
   assert.match(await upload.text(), /只有相册主人可以上传照片/);
+
+  const edit = await worker.fetch(apiRequest("/api/photos/photo-id", "", "PATCH"), publicEnv);
+  assert.equal(edit.status, 403);
+  assert.match(await edit.text(), /只有相册主人可以编辑照片/);
+
+  const batchDelete = await worker.fetch(apiRequest("/api/photos/batch-delete", "", "POST"), publicEnv);
+  assert.equal(batchDelete.status, 403);
+  assert.match(await batchDelete.text(), /只有相册主人可以批量删除照片/);
+});
+
+test("owner can edit metadata and batch deletion reports missing photos safely", async () => {
+  const columns = [
+    "id", "object_key", "title", "category", "location", "captured_at", "content_type", "file_size",
+    "object_version", "camera", "lens", "technical", "owner_sub", "created_at",
+  ].map((name) => ({ name }));
+  let updateBindings: unknown[] = [];
+  const database = {
+    batch: async () => [],
+    prepare(query: string) {
+      const statement = {
+        bind: (...values: unknown[]) => {
+          if (query.startsWith("UPDATE photos")) updateBindings = values;
+          return statement;
+        },
+        all: async () => query.startsWith("PRAGMA table_info") ? { results: columns } : { results: [] },
+        first: async () => query.startsWith("SELECT id, created_at") ? { id: "photo-1", created_at: 123 } : null,
+        run: async () => ({ success: true }),
+      };
+      return statement;
+    },
+  };
+  const ownerEnv = { ...baseEnv, DB: database } as never;
+  const token = await session("owner@example.com");
+  const edit = await worker.fetch(apiRequest("/api/photos/photo-1", token, "PATCH", allowedOrigin, JSON.stringify({
+    title: "新的标题",
+    category: "个人",
+    location: "上海",
+    capturedAt: "2026-08-28",
+    camera: "Sony A7 IV",
+    lens: "35mm F1.4",
+    technical: "ƒ/2 · 1/250s",
+  })), ownerEnv);
+  assert.equal(edit.status, 200);
+  assert.equal((await edit.json() as { photo: { title: string } }).photo.title, "新的标题");
+  assert.deepEqual(updateBindings, ["新的标题", "个人", "上海", "2026-08-28", "Sony A7 IV", "35mm F1.4", "ƒ/2 · 1/250s", "photo-1"]);
+
+  const batchDelete = await worker.fetch(apiRequest("/api/photos/batch-delete", token, "POST", allowedOrigin, JSON.stringify({
+    ids: ["missing-1", "missing-2", "missing-1"],
+  })), ownerEnv);
+  assert.equal(batchDelete.status, 200);
+  const result = await batchDelete.json() as { deletedIds: string[]; failed: Array<{ id: string }> };
+  assert.deepEqual(result.deletedIds, []);
+  assert.deepEqual(result.failed.map((item) => item.id), ["missing-1", "missing-2"]);
 });

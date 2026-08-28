@@ -63,7 +63,7 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
   if (!origin || !requestOriginAllowed(request, env)) return {};
   return {
     "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
     "access-control-allow-headers": "Authorization, Content-Type, X-Lumen-Request",
     "access-control-max-age": "86400",
     vary: "Origin",
@@ -245,7 +245,7 @@ function secureWriteRequest(request: Request, env: Env) {
   return request.headers.get("x-lumen-request") === "1" && requestOriginAllowed(request, env);
 }
 
-function cleanText(value: FormDataEntryValue | null, max = 80) {
+function cleanText(value: unknown, max = 80) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
@@ -476,6 +476,79 @@ async function handleApi(request: Request, env: Env) {
     }
     const photo = await photoFromRow(request, env, { id, title, category, location, captured_at: capturedAt, camera, lens, technical, created_at: createdAt });
     return json(request, env, { photo }, { status: 201 });
+  }
+
+  if (path === "/api/photos/batch-delete" && request.method === "POST") {
+    if (!secureWriteRequest(request, env)) return json(request, env, { error: "批量删除请求未通过安全检查。" }, { status: 403 });
+    const user = await readSession(request, env);
+    if (!user?.isOwner) return json(request, env, { error: "只有相册主人可以批量删除照片。" }, { status: 403 });
+    const body = await request.json().catch(() => null) as { ids?: unknown } | null;
+    const ids = Array.isArray(body?.ids)
+      ? [...new Set(body.ids.filter((id): id is string => typeof id === "string" && Boolean(id.trim())).map((id) => id.trim()))].slice(0, 100)
+      : [];
+    if (!ids.length) return json(request, env, { error: "请选择要删除的照片。" }, { status: 400 });
+    await ensureSchema(env);
+    const deletedIds: string[] = [];
+    const failed: Array<{ id: string; error: string }> = [];
+    for (let offset = 0; offset < ids.length; offset += 5) {
+      const results = await Promise.all(ids.slice(offset, offset + 5).map(async (id) => {
+        const row = await env.DB.prepare("SELECT object_key, object_version FROM photos WHERE id = ?")
+          .bind(id).first<{ object_key: string; object_version: string }>();
+        if (!row) return { id, error: "没有找到这张照片。" };
+        try {
+          await b2Delete(env, row.object_key, row.object_version);
+          await env.DB.prepare("DELETE FROM photos WHERE id = ?").bind(id).run();
+          return { id };
+        } catch {
+          return { id, error: "云端暂时无法删除。" };
+        }
+      }));
+      for (const result of results) {
+        if (result.error) failed.push({ id: result.id, error: result.error });
+        else deletedIds.push(result.id);
+      }
+    }
+    return json(request, env, { deletedIds, failed });
+  }
+
+  if (path.startsWith("/api/photos/") && request.method === "PATCH") {
+    if (!secureWriteRequest(request, env)) return json(request, env, { error: "编辑请求未通过安全检查。" }, { status: 403 });
+    const user = await readSession(request, env);
+    if (!user?.isOwner) return json(request, env, { error: "只有相册主人可以编辑照片。" }, { status: 403 });
+    const id = decodeURIComponent(path.slice("/api/photos/".length));
+    if (!id || id === "batch-delete") return json(request, env, { error: "照片编号无效。" }, { status: 400 });
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    if (!body) return json(request, env, { error: "没有收到可编辑的信息。" }, { status: 400 });
+    const title = cleanText(body.title);
+    if (!title) return json(request, env, { error: "请填写作品名称。" }, { status: 400 });
+    const category = cleanText(body.category, 20);
+    if (!["摄影", "动物", "个人"].includes(category)) return json(request, env, { error: "请选择有效的作品分类。" }, { status: 400 });
+    const location = cleanText(body.location);
+    const capturedAt = cleanText(body.capturedAt, 20);
+    const camera = cleanText(body.camera, 120);
+    const lens = cleanText(body.lens, 120);
+    const technical = cleanText(body.technical, 120);
+    await ensureSchema(env);
+    const existing = await env.DB.prepare("SELECT id, created_at FROM photos WHERE id = ?")
+      .bind(id).first<{ id: string; created_at: number }>();
+    if (!existing) return json(request, env, { error: "没有找到这张照片。" }, { status: 404 });
+    await env.DB.prepare(
+      `UPDATE photos
+       SET title = ?, category = ?, location = ?, captured_at = ?, camera = ?, lens = ?, technical = ?
+       WHERE id = ?`,
+    ).bind(title, category, location, capturedAt, camera, lens, technical, id).run();
+    const photo = await photoFromRow(request, env, {
+      id,
+      title,
+      category,
+      location,
+      captured_at: capturedAt,
+      camera,
+      lens,
+      technical,
+      created_at: existing.created_at,
+    });
+    return json(request, env, { photo });
   }
 
   if (path.startsWith("/api/photos/") && request.method === "DELETE") {

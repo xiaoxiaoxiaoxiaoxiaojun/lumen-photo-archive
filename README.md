@@ -15,7 +15,9 @@
 
 - `GET /api/photos`：公开只读。
 - `POST /api/photos`：仅 `OWNER_GOOGLE_EMAIL` 对应的用户。
+- `PATCH /api/photos/:id`：仅主人可编辑作品信息。
 - `DELETE /api/photos/:id`：仅 `OWNER_GOOGLE_EMAIL` 对应的用户。
+- `POST /api/photos/batch-delete`：仅主人可批量删除，单次最多 100 张。
 - B2 存储桶不公开；浏览器拿到的是 6 小时有效的签名图片地址。
 - 跨站写操作只接受 `ALLOWED_ORIGIN` 指定的 GitHub Pages 来源。
 

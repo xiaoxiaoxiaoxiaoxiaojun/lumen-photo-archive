@@ -1,6 +1,7 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   deletePhoto as deleteCloudPhoto,
+  deletePhotos as deleteCloudPhotos,
   getConfig,
   getPhotos,
   isConfigured,
@@ -8,6 +9,7 @@ import {
   logout,
   reverseGeocode,
   restoreUser,
+  updatePhoto as updateCloudPhoto,
   uploadPhoto as uploadCloudPhoto,
   type Photo,
   type SessionUser,
@@ -104,6 +106,11 @@ export default function App() {
   const [filter, setFilter] = useState("全部");
   const [viewMode, setViewMode] = useState<ViewMode>("default");
   const [selected, setSelected] = useState<Photo | null>(null);
+  const [editingPhoto, setEditingPhoto] = useState<Photo | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
+  const [deletingBatch, setDeletingBatch] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
@@ -359,9 +366,82 @@ export default function App() {
     try {
       await deleteCloudPhoto(photo.id);
       setPhotos((current) => current.filter((item) => item.id !== photo.id));
+      setSelectedPhotoIds((current) => current.filter((id) => id !== photo.id));
       setSelected(null);
     } catch (error) {
       setNotice(errorMessage(error, "删除失败，请重试。"));
+    }
+  }
+
+  async function handleEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user?.isOwner || !editingPhoto) return setNotice("当前账号只有查看权限。");
+    const form = new FormData(event.currentTarget);
+    setSavingEdit(true);
+    try {
+      const updated = await updateCloudPhoto(editingPhoto.id, {
+        title: String(form.get("title") || ""),
+        category: String(form.get("category") || "摄影"),
+        location: String(form.get("location") || ""),
+        capturedAt: String(form.get("capturedAt") || ""),
+        camera: String(form.get("camera") || ""),
+        lens: String(form.get("lens") || ""),
+        technical: String(form.get("technical") || ""),
+      });
+      setPhotos((current) => current.map((photo) => photo.id === updated.id ? updated : photo));
+      setSelected((current) => current?.id === updated.id ? updated : current);
+      setEditingPhoto(null);
+      setNotice("照片信息已更新。");
+    } catch (error) {
+      setNotice(errorMessage(error, "编辑失败，请重试。"));
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  function toggleBulkMode() {
+    setBulkMode((current) => !current);
+    setSelectedPhotoIds([]);
+    setSelected(null);
+  }
+
+  function togglePhotoSelection(photo: Photo) {
+    if (photo.id.startsWith("demo-")) return;
+    setSelectedPhotoIds((current) => current.includes(photo.id)
+      ? current.filter((id) => id !== photo.id)
+      : [...current, photo.id]);
+  }
+
+  function toggleAllVisible(visiblePhotos: Photo[]) {
+    const ids = visiblePhotos.filter((photo) => !photo.id.startsWith("demo-")).map((photo) => photo.id);
+    const allSelected = ids.length > 0 && ids.every((id) => selectedPhotoIds.includes(id));
+    setSelectedPhotoIds((current) => allSelected
+      ? current.filter((id) => !ids.includes(id))
+      : [...new Set([...current, ...ids])]);
+  }
+
+  async function handleBatchDelete() {
+    if (!user?.isOwner) return setNotice("当前账号只有查看权限。");
+    if (!selectedPhotoIds.length) return setNotice("请先选择要删除的照片。");
+    if (!window.confirm(`确定删除选中的 ${selectedPhotoIds.length} 张照片吗？删除后无法恢复。`)) return;
+    setDeletingBatch(true);
+    try {
+      const result = await deleteCloudPhotos(selectedPhotoIds);
+      const deleted = new Set(result.deletedIds);
+      setPhotos((current) => current.filter((photo) => !deleted.has(photo.id)));
+      setSelected((current) => current && deleted.has(current.id) ? null : current);
+      const remaining = selectedPhotoIds.filter((id) => !deleted.has(id));
+      setSelectedPhotoIds(remaining);
+      if (result.failed.length) {
+        setNotice(`已删除 ${result.deletedIds.length} 张，${result.failed.length} 张失败，可直接重试。`);
+      } else {
+        setBulkMode(false);
+        setNotice(`已删除 ${result.deletedIds.length} 张照片。`);
+      }
+    } catch (error) {
+      setNotice(errorMessage(error, "批量删除失败，请重试。"));
+    } finally {
+      setDeletingBatch(false);
     }
   }
 
@@ -370,6 +450,9 @@ export default function App() {
     window.google?.accounts.id.disableAutoSelect();
     setUser(null);
     setSelected(null);
+    setEditingPhoto(null);
+    setBulkMode(false);
+    setSelectedPhotoIds([]);
     closeUpload();
   }
 
@@ -388,6 +471,8 @@ export default function App() {
   const displayName = user?.name || user?.email || "访客";
   const analyzingCount = uploadItems.filter((item) => item.status === "analyzing").length;
   const failedUploadCount = uploadItems.filter((item) => item.status === "error").length;
+  const manageablePhotos = filtered.filter((photo) => !photo.id.startsWith("demo-"));
+  const allVisibleSelected = manageablePhotos.length > 0 && manageablePhotos.every((photo) => selectedPhotoIds.includes(photo.id));
 
   return <main>
     <header className="site-header">
@@ -433,17 +518,43 @@ export default function App() {
           </nav>
           <div className="archive-actions">
             <nav className="filters" aria-label="作品分类">{categoryTabs.map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}</nav>
-            {user?.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}
+            {user?.isOwner ? <div className="owner-actions"><button className={`manage-button ${bulkMode ? "active" : ""}`} type="button" onClick={toggleBulkMode} disabled={!photos.length}>{bulkMode ? "退出批量" : "批量管理"}</button><button className="upload-button" type="button" onClick={() => setUploadOpen(true)} disabled={bulkMode}>＋ 上传照片</button></div> : null}
           </div>
         </div>
       </div>
-      <div className={`photo-grid view-${viewMode}`}>{filtered.map((photo, index) => <article className={`photo-card photo-${index % 3}`} key={photo.id}><button className="photo-image" type="button" onClick={() => setSelected(photo)} aria-label={`查看 ${photo.title}`}><img src={photo.url} alt={photo.title} loading={index > 2 ? "lazy" : "eager"} onLoad={(event) => sizeMasonryCard(event.currentTarget)} /></button><div className="photo-caption"><h3>{photo.title}</h3><p><span>{displayCategory(photo.category)}</span><span>{photo.location || "地点未知"} · {photo.capturedAt || "时间未知"}</span></p></div></article>)}</div>
+      {bulkMode ? <div className="bulk-toolbar" role="toolbar" aria-label="批量管理照片"><strong>已选择 {selectedPhotoIds.length} 张</strong><div><button type="button" onClick={() => toggleAllVisible(manageablePhotos)} disabled={!manageablePhotos.length}>{allVisibleSelected ? "取消全选" : "全选当前"}</button><button className="bulk-delete-button" type="button" onClick={handleBatchDelete} disabled={!selectedPhotoIds.length || deletingBatch}>{deletingBatch ? "正在删除…" : "删除选中"}</button></div></div> : null}
+      <div className={`photo-grid view-${viewMode} ${bulkMode ? "is-selecting" : ""}`}>{filtered.map((photo, index) => {
+        const selectedForDelete = selectedPhotoIds.includes(photo.id);
+        const canManage = !photo.id.startsWith("demo-");
+        return <article className={`photo-card photo-${index % 3} ${selectedForDelete ? "is-selected" : ""}`} key={photo.id}><button className="photo-image" type="button" onClick={() => bulkMode ? togglePhotoSelection(photo) : setSelected(photo)} disabled={bulkMode && !canManage} aria-label={bulkMode ? `${selectedForDelete ? "取消选择" : "选择"} ${photo.title}` : `查看 ${photo.title}`} aria-pressed={bulkMode ? selectedForDelete : undefined}><img src={photo.url} alt={photo.title} loading={index > 2 ? "lazy" : "eager"} onLoad={(event) => sizeMasonryCard(event.currentTarget)} />{bulkMode && canManage ? <span className="selection-mark" aria-hidden="true">{selectedForDelete ? "✓" : ""}</span> : null}</button><div className="photo-caption"><h3>{photo.title}</h3><p><span>{displayCategory(photo.category)}</span><span>{photo.location || "地点未知"} · {photo.capturedAt || "时间未知"}</span></p></div></article>;
+      })}</div>
       {!filtered.length ? <div className="empty-state">这个分类里还没有照片。</div> : null}
     </section>
 
     <footer><p><span className="legal-links"><a href="privacy.html">隐私政策</a> · <a href="terms.html">服务条款</a></span><br />© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
 
-    {selected ? <div className="lightbox" role="dialog" aria-modal="true"><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{displayCategory(selected.category)} · {selected.location || "地点未知"} · {selected.capturedAt || "时间未知"}</p>{selected.camera || selected.lens || selected.technical ? <p className="camera-data">{[selected.camera, selected.lens, selected.technical].filter(Boolean).join(" · ")}</p> : null}</div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => handleDelete(selected)}>删除照片</button> : null}</div></div> : null}
+    {selected ? <div className="lightbox" role="dialog" aria-modal="true"><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{displayCategory(selected.category)} · {selected.location || "地点未知"} · {selected.capturedAt || "时间未知"}</p>{selected.camera || selected.lens || selected.technical ? <p className="camera-data">{[selected.camera, selected.lens, selected.technical].filter(Boolean).join(" · ")}</p> : null}</div>{user?.isOwner && !selected.id.startsWith("demo-") ? <div className="lightbox-actions"><button type="button" onClick={() => setEditingPhoto(selected)}>编辑信息</button><button className="danger" type="button" onClick={() => handleDelete(selected)}>删除照片</button></div> : null}</div></div> : null}
+
+    {editingPhoto && user?.isOwner ? (
+      <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="edit-photo-title">
+        <form className="upload-modal edit-photo-modal" onSubmit={handleEdit}>
+          <button className="modal-close" type="button" onClick={() => setEditingPhoto(null)} disabled={savingEdit} aria-label="关闭">×</button>
+          <p className="eyebrow">EDIT THE MEMORY</p>
+          <h2 id="edit-photo-title">编辑照片信息</h2>
+          <div className="edit-photo-preview"><img src={editingPhoto.url} alt="" /><div><strong>{editingPhoto.title}</strong><small>照片原图不会被修改</small></div></div>
+          <div className="form-grid edit-form-grid">
+            <label><span>作品名称</span><input name="title" maxLength={80} defaultValue={editingPhoto.title} required /></label>
+            <label><span>拍摄地点</span><input name="location" maxLength={80} defaultValue={editingPhoto.location} /></label>
+            <label><span>分类</span><select name="category" defaultValue={displayCategory(editingPhoto.category)}><option>摄影</option><option>动物</option><option>个人</option></select></label>
+            <label><span>拍摄时间</span><input name="capturedAt" maxLength={20} defaultValue={editingPhoto.capturedAt} /></label>
+            <label><span>相机</span><input name="camera" maxLength={120} defaultValue={editingPhoto.camera || ""} placeholder="例如：Sony A7 IV" /></label>
+            <label><span>镜头</span><input name="lens" maxLength={120} defaultValue={editingPhoto.lens || ""} placeholder="例如：35mm F1.4" /></label>
+            <label className="full-width"><span>拍摄参数</span><input name="technical" maxLength={120} defaultValue={editingPhoto.technical || ""} placeholder="例如：ƒ/2.8 · 1/250s · ISO 100" /></label>
+          </div>
+          <button className="submit-upload" type="submit" disabled={savingEdit}>{savingEdit ? "正在保存…" : "保存修改"}</button>
+        </form>
+      </div>
+    ) : null}
 
     {uploadOpen && user?.isOwner ? (
       <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="batch-upload-title">
@@ -508,7 +619,7 @@ export default function App() {
         </form>
       </div>
     ) : null}
-    {manageMode && !user ? <div className="modal-backdrop owner-gate" role="dialog" aria-modal="true" aria-labelledby="owner-gate-title"><div className="owner-gate-card"><a className="owner-gate-close" href="./" aria-label="返回公开相册">×</a><p className="eyebrow">OWNER ACCESS</p><h2 id="owner-gate-title">主人管理</h2><p>使用主人 Google 账号验证后，才会显示上传和删除功能。</p>{googleClientId ? <div className="google-slot google-slot-card" ref={googleCardRef} /> : <div className="auth-placeholder">等待管理登录配置</div>}<a className="owner-gate-back" href="./">返回公开相册</a></div></div> : null}
+    {manageMode && !user ? <div className="modal-backdrop owner-gate" role="dialog" aria-modal="true" aria-labelledby="owner-gate-title"><div className="owner-gate-card"><a className="owner-gate-close" href="./" aria-label="返回公开相册">×</a><p className="eyebrow">OWNER ACCESS</p><h2 id="owner-gate-title">主人管理</h2><p>使用主人 Google 账号验证后，才会显示上传、编辑和删除功能。</p>{googleClientId ? <div className="google-slot google-slot-card" ref={googleCardRef} /> : <div className="auth-placeholder">等待管理登录配置</div>}<a className="owner-gate-back" href="./">返回公开相册</a></div></div> : null}
     {loading ? <div className="page-loader"><span /></div> : null}
   </main>;
 }
