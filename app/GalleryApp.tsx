@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ArchiveViews, archiveViewModes, type ArchiveViewMode } from "./ArchiveViews";
 
 type GoogleCredentialResponse = { credential: string };
 
@@ -43,34 +44,10 @@ const demoPhotos: Photo[] = [
 ];
 
 const categoryTabs = ["全部", "摄影", "动物", "个人"] as const;
-const viewModes = [
-  { id: "default", label: "默认" },
-  { id: "list", label: "列表" },
-  { id: "gallery", label: "画廊" },
-  { id: "loop", label: "环形" },
-  { id: "spiral", label: "螺旋" },
-] as const;
-
-type ViewMode = typeof viewModes[number]["id"];
 
 function displayCategory(category: string) {
   if (category === "动物" || category === "个人") return category;
   return "摄影";
-}
-
-function sizeMasonryCard(image: HTMLImageElement) {
-  const card = image.closest<HTMLElement>(".photo-card");
-  const grid = card?.parentElement;
-  if (!card || !grid) return;
-  if (!grid.classList.contains("view-default")) {
-    card.style.gridRowEnd = "";
-    return;
-  }
-  const styles = window.getComputedStyle(grid);
-  const rowHeight = Number.parseFloat(styles.gridAutoRows) || 4;
-  const rowGap = Number.parseFloat(styles.rowGap) || 0;
-  const span = Math.ceil((card.getBoundingClientRect().height + rowGap) / (rowHeight + rowGap));
-  card.style.gridRowEnd = `span ${span}`;
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -87,7 +64,7 @@ export default function GalleryApp() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [filter, setFilter] = useState("全部");
-  const [viewMode, setViewMode] = useState<ViewMode>("default");
+  const [viewMode, setViewMode] = useState<ArchiveViewMode>("default");
   const [selected, setSelected] = useState<Photo | null>(null);
   const [editingPhoto, setEditingPhoto] = useState<Photo | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -100,28 +77,6 @@ export default function GalleryApp() {
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const headerGoogleRef = useRef<HTMLDivElement>(null);
   const cardGoogleRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let frame = 0;
-    const resizeCards = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        document.querySelectorAll<HTMLImageElement>(".photo-grid .photo-image img").forEach(sizeMasonryCard);
-      });
-    };
-    window.addEventListener("resize", resizeCards);
-    return () => {
-      window.removeEventListener("resize", resizeCards);
-      cancelAnimationFrame(frame);
-    };
-  }, []);
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      document.querySelectorAll<HTMLImageElement>(".photo-grid .photo-image img").forEach(sizeMasonryCard);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [filter, photos, viewMode]);
 
   const loadPhotos = useCallback(async () => {
     const result = await readJson<{ photos: Photo[] }>(await fetch("/api/photos"));
@@ -433,7 +388,7 @@ export default function GalleryApp() {
             <div className="archive-title"><p className="eyebrow">THE ARCHIVE</p><h2 id="archive-title">摄影档案</h2></div>
             <div className="archive-controls">
               <nav className="view-switcher" aria-label="照片展示形式">
-                {viewModes.map((mode) => (
+                {archiveViewModes.map((mode) => (
                   <button className={viewMode === mode.id ? "active" : ""} type="button" key={mode.id} aria-pressed={viewMode === mode.id} onClick={() => setViewMode(mode.id)}>
                     <span aria-hidden="true" />{mode.label}
                   </button>
@@ -449,17 +404,15 @@ export default function GalleryApp() {
           </div>
 
           {bulkMode ? <div className="bulk-toolbar" role="toolbar" aria-label="批量管理照片"><strong>已选择 {selectedPhotoIds.length} 张</strong><div><button type="button" onClick={() => toggleAllVisible(manageablePhotos)} disabled={!manageablePhotos.length}>{allVisibleSelected ? "取消全选" : "全选当前"}</button><button className="bulk-delete-button" type="button" onClick={batchDeletePhotos} disabled={!selectedPhotoIds.length || deletingBatch}>{deletingBatch ? "正在删除…" : "删除选中"}</button></div></div> : null}
-          <div className={`photo-grid view-${viewMode} ${bulkMode ? "is-selecting" : ""}`}>
-            {filteredPhotos.map((photo, index) => (
-              <article className={`photo-card photo-${index % 3} ${selectedPhotoIds.includes(photo.id) ? "is-selected" : ""}`} key={photo.id}>
-                <button className="photo-image" type="button" onClick={() => bulkMode ? togglePhotoSelection(photo) : setSelected(photo)} disabled={bulkMode && photo.id.startsWith("demo-")} aria-label={bulkMode ? `${selectedPhotoIds.includes(photo.id) ? "取消选择" : "选择"} ${photo.title}` : `查看 ${photo.title}`} aria-pressed={bulkMode ? selectedPhotoIds.includes(photo.id) : undefined}>
-                  <img src={photo.url} alt={photo.title} loading={index > 2 ? "lazy" : "eager"} onLoad={(event) => sizeMasonryCard(event.currentTarget)} />
-                  {bulkMode && !photo.id.startsWith("demo-") ? <span className="selection-mark" aria-hidden="true">{selectedPhotoIds.includes(photo.id) ? "✓" : ""}</span> : null}
-                </button>
-                <div className="photo-caption"><h3>{photo.title}</h3><p><span>{displayCategory(photo.category)}</span><span>{photo.location || "地点未知"} · {photo.capturedAt || "时间未知"}</span></p></div>
-              </article>
-            ))}
-          </div>
+          <ArchiveViews
+            photos={filteredPhotos}
+            mode={viewMode}
+            bulkMode={bulkMode}
+            selectedPhotoIds={selectedPhotoIds}
+            displayCategory={displayCategory}
+            onOpen={setSelected}
+            onToggle={togglePhotoSelection}
+          />
           {!filteredPhotos.length ? <div className="empty-state">这个分类里还没有照片。</div> : null}
         </section>
       ) : (
