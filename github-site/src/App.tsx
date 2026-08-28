@@ -30,6 +30,15 @@ const demoPhotos: Photo[] = [
 
 const categoryTabs = ["全部", "摄影", "动物", "个人"] as const;
 
+type UploadItem = {
+  id: string;
+  file: File;
+  preview: string;
+  metadata: PhotoMetadata | null;
+  status: "analyzing" | "ready" | "uploading" | "error";
+  error?: string;
+};
+
 function displayCategory(category: string) {
   if (category === "动物" || category === "个人") return category;
   return "摄影";
@@ -83,12 +92,11 @@ export default function App() {
   const [selected, setSelected] = useState<Photo | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadPreview, setUploadPreview] = useState("");
-  const [uploadMetadata, setUploadMetadata] = useState<PhotoMetadata | null>(null);
+  const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const googleCardRef = useRef<HTMLDivElement>(null);
   const analysisIdRef = useRef(0);
+  const uploadItemsRef = useRef<UploadItem[]>([]);
 
   useEffect(() => {
     let frame = 0;
@@ -168,36 +176,27 @@ export default function App() {
     return () => window.removeEventListener("keydown", close);
   }, [selected]);
 
+  useEffect(() => {
+    uploadItemsRef.current = uploadItems;
+  }, [uploadItems]);
+
   useEffect(() => () => {
-    if (uploadPreview) URL.revokeObjectURL(uploadPreview);
-  }, [uploadPreview]);
+    uploadItemsRef.current.forEach((item) => URL.revokeObjectURL(item.preview));
+  }, []);
 
   function closeUpload() {
+    if (uploading) return;
     analysisIdRef.current += 1;
+    uploadItems.forEach((item) => URL.revokeObjectURL(item.preview));
     setUploadOpen(false);
-    setUploadFile(null);
-    setUploadMetadata(null);
-    setUploadPreview("");
-    setAnalyzing(false);
+    setUploadItems([]);
+    setUploadProgress({ current: 0, total: 0 });
   }
 
-  async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/") || file.size > 20 * 1024 * 1024) {
-      event.currentTarget.value = "";
-      setNotice("请选择一张不超过 20MB 的图片。");
-      return;
-    }
-
-    const analysisId = ++analysisIdRef.current;
-    setUploadFile(file);
-    setUploadMetadata(null);
-    setAnalyzing(true);
-    setUploadPreview(URL.createObjectURL(file));
-
+  async function analyzeUploadItem(item: UploadItem, analysisId: number) {
+    let metadata: PhotoMetadata;
     try {
-      const metadata = await extractPhotoMetadata(file);
+      metadata = await extractPhotoMetadata(item.file);
       if (metadata.latitude !== undefined && metadata.longitude !== undefined) {
         try {
           const result = await reverseGeocode(metadata.latitude, metadata.longitude);
@@ -207,51 +206,129 @@ export default function App() {
           metadata.location = "地点识别暂不可用";
         }
       }
-      if (analysisId === analysisIdRef.current) setUploadMetadata(metadata);
     } catch {
-      if (analysisId === analysisIdRef.current) {
-        setUploadMetadata({
-          title: file.name.replace(/\.[^.]+$/, "") || "未命名作品",
-          category: "摄影",
-          location: "",
-          capturedAt: "",
-          camera: "",
-          lens: "",
-          technical: "",
-        });
-      }
-    } finally {
-      if (analysisId === analysisIdRef.current) setAnalyzing(false);
+      metadata = {
+        title: item.file.name.replace(/\.[^.]+$/, "") || "未命名作品",
+        category: "摄影",
+        location: "",
+        capturedAt: "",
+        camera: "",
+        lens: "",
+        technical: "",
+      };
     }
+    if (analysisId !== analysisIdRef.current) return;
+    setUploadItems((current) => current.map((currentItem) => (
+      currentItem.id === item.id ? { ...currentItem, metadata, status: "ready" } : currentItem
+    )));
+  }
+
+  async function analyzeUploadItems(items: UploadItem[], analysisId: number) {
+    for (const item of items) {
+      if (analysisId !== analysisIdRef.current) break;
+      await analyzeUploadItem(item, analysisId);
+    }
+  }
+
+  function handleFilesSelected(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = "";
+    if (!selectedFiles.length) return;
+
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+    const existingFiles = new Set(uploadItems.map((item) => `${item.file.name}:${item.file.size}:${item.file.lastModified}`));
+    const validFiles = selectedFiles.filter((file) => allowedTypes.has(file.type) && file.size <= 20 * 1024 * 1024)
+      .filter((file) => !existingFiles.has(`${file.name}:${file.size}:${file.lastModified}`));
+    const invalidCount = selectedFiles.filter((file) => !allowedTypes.has(file.type) || file.size > 20 * 1024 * 1024).length;
+    const duplicateCount = selectedFiles.length - validFiles.length - invalidCount;
+
+    if (!validFiles.length) {
+      setNotice(invalidCount ? "请选择 JPG、PNG、WebP 或 AVIF 图片，且每张不超过 20MB。" : "这些照片已经在待上传列表中。");
+      return;
+    }
+
+    const analysisId = analysisIdRef.current;
+    const newItems: UploadItem[] = validFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      preview: URL.createObjectURL(file),
+      metadata: null,
+      status: "analyzing",
+    }));
+    setUploadItems((current) => [...current, ...newItems]);
+    void analyzeUploadItems(newItems, analysisId);
+
+    if (invalidCount || duplicateCount) {
+      const notes = [
+        invalidCount ? `${invalidCount} 张格式或大小不符合要求` : "",
+        duplicateCount ? `${duplicateCount} 张已在列表中` : "",
+      ].filter(Boolean).join("，");
+      setNotice(`已加入 ${validFiles.length} 张照片；${notes}。`);
+    }
+  }
+
+  function removeUploadItem(id: string) {
+    if (uploading) return;
+    setUploadItems((current) => {
+      const removed = current.find((item) => item.id === id);
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return current.filter((item) => item.id !== id);
+    });
   }
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user?.isOwner) return setNotice("当前账号只有查看权限。");
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const file = form.get("file");
-    if (!(file instanceof File) || !file.type.startsWith("image/") || file.size > 20 * 1024 * 1024) {
-      return setNotice("请选择一张不超过 20MB 的图片。");
-    }
-    if (!uploadMetadata || analyzing) return setNotice("照片信息仍在自动识别，请稍候。");
-    form.set("title", uploadMetadata.title);
-    form.set("category", uploadMetadata.category);
-    form.set("location", uploadMetadata.location);
-    form.set("capturedAt", uploadMetadata.capturedAt);
-    form.set("camera", uploadMetadata.camera);
-    form.set("lens", uploadMetadata.lens);
-    form.set("technical", uploadMetadata.technical);
+    if (!uploadItems.length) return setNotice("请先选择要上传的照片。");
+    if (uploadItems.some((item) => item.status === "analyzing")) return setNotice("照片信息仍在自动识别，请稍候。");
+    const pendingItems = uploadItems.filter((item) => item.metadata && item.status !== "uploading");
+    if (!pendingItems.length) return;
+
     setUploading(true);
-    try {
-      const photo = await uploadCloudPhoto(form);
-      setPhotos((current) => [photo, ...current]);
-      formElement.reset();
+    setUploadProgress({ current: 0, total: pendingItems.length });
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (const [index, item] of pendingItems.entries()) {
+      const metadata = item.metadata;
+      if (!metadata) continue;
+      setUploadProgress({ current: index + 1, total: pendingItems.length });
+      setUploadItems((current) => current.map((currentItem) => (
+        currentItem.id === item.id ? { ...currentItem, status: "uploading", error: undefined } : currentItem
+      )));
+      const form = new FormData();
+      form.set("file", item.file);
+      form.set("title", metadata.title);
+      form.set("category", metadata.category);
+      form.set("location", metadata.location);
+      form.set("capturedAt", metadata.capturedAt);
+      form.set("camera", metadata.camera);
+      form.set("lens", metadata.lens);
+      form.set("technical", metadata.technical);
+
+      try {
+        const photo = await uploadCloudPhoto(form);
+        successCount += 1;
+        setPhotos((current) => [photo, ...current]);
+        setUploadItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
+        URL.revokeObjectURL(item.preview);
+      } catch (error) {
+        failureCount += 1;
+        setUploadItems((current) => current.map((currentItem) => (
+          currentItem.id === item.id
+            ? { ...currentItem, status: "error", error: errorMessage(error, "上传失败，请重试。") }
+            : currentItem
+        )));
+      }
+    }
+
+    setUploading(false);
+    setUploadProgress({ current: 0, total: 0 });
+    if (!failureCount) {
       closeUpload();
-    } catch (error) {
-      setNotice(errorMessage(error, "上传失败，请重试。"));
-    } finally {
-      setUploading(false);
+      setNotice(`已成功上传 ${successCount} 张照片。`);
+    } else {
+      setNotice(`已上传 ${successCount} 张，${failureCount} 张失败，可在列表中重试。`);
     }
   }
 
@@ -288,6 +365,8 @@ export default function App() {
   const shown = photos.length ? photos : demoPhotos;
   const filtered = filter === "全部" ? shown : shown.filter((photo) => displayCategory(photo.category) === filter);
   const displayName = user?.name || user?.email || "访客";
+  const analyzingCount = uploadItems.filter((item) => item.status === "analyzing").length;
+  const failedUploadCount = uploadItems.filter((item) => item.status === "error").length;
 
   return <main>
     <header className="site-header">
@@ -327,7 +406,69 @@ export default function App() {
 
     {selected ? <div className="lightbox" role="dialog" aria-modal="true"><button className="lightbox-close" type="button" onClick={() => setSelected(null)}>×</button><img src={selected.url} alt={selected.title} /><div className="lightbox-meta"><div><h2>{selected.title}</h2><p>{displayCategory(selected.category)} · {selected.location || "地点未知"} · {selected.capturedAt || "时间未知"}</p>{selected.camera || selected.lens || selected.technical ? <p className="camera-data">{[selected.camera, selected.lens, selected.technical].filter(Boolean).join(" · ")}</p> : null}</div>{user?.isOwner && !selected.id.startsWith("demo-") ? <button type="button" onClick={() => handleDelete(selected)}>删除照片</button> : null}</div></div> : null}
 
-    {uploadOpen && user?.isOwner ? <div className="modal-backdrop" role="dialog" aria-modal="true"><form className="upload-modal" onSubmit={handleUpload}><button className="modal-close" type="button" onClick={closeUpload}>×</button><p className="eyebrow">ADD TO THE ARCHIVE</p><h2>上传一张新作品</h2><label className={`file-drop ${uploadPreview ? "has-preview" : ""}`}>{uploadPreview ? <img src={uploadPreview} alt="待上传照片预览" /> : null}<input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={handleFileSelected} required /><span>{uploadPreview ? "更换照片" : "选择照片"}</span><small>{uploadFile ? `${uploadFile.name} · ${(uploadFile.size / 1024 / 1024).toFixed(1)}MB` : "JPG、PNG、WebP 或 AVIF，最大 20MB"}</small></label><section className="metadata-panel" aria-live="polite">{!uploadFile ? <div className="metadata-empty"><strong>选择后自动识别</strong><p>拍摄时间、GPS 地点、相机型号和拍摄参数会自动读取，无需手动填写。</p></div> : analyzing ? <div className="metadata-loading"><i /><div><strong>正在分析照片</strong><p>读取原始拍摄信息与地点名称…</p></div></div> : uploadMetadata ? <><div className="metadata-heading"><span>自动识别完成</span><b>无需填写</b></div><dl><div><dt>作品名称</dt><dd>{uploadMetadata.title}</dd></div><div><dt>拍摄时间</dt><dd>{uploadMetadata.capturedAt || "照片未记录"}</dd></div><div><dt>地点名称</dt><dd>{uploadMetadata.location || "照片没有 GPS 信息"}</dd></div><div><dt>分类</dt><dd>{uploadMetadata.category}</dd></div><div><dt>相机</dt><dd>{uploadMetadata.camera || "照片未记录"}</dd></div><div><dt>拍摄参数</dt><dd>{uploadMetadata.technical || "照片未记录"}</dd></div></dl>{uploadMetadata.geocoded ? <p className="map-credit">地点名称由 <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a> 提供</p> : null}</> : null}</section><button className="submit-upload" type="submit" disabled={uploading || analyzing || !uploadMetadata}>{uploading ? "正在上传…" : analyzing ? "正在识别…" : "上传到云端"}</button></form></div> : null}
+    {uploadOpen && user?.isOwner ? (
+      <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="batch-upload-title">
+        <form className="upload-modal batch-upload-modal" onSubmit={handleUpload}>
+          <button className="modal-close" type="button" onClick={closeUpload} disabled={uploading} aria-label="关闭">×</button>
+          <p className="eyebrow">ADD TO THE ARCHIVE</p>
+          <h2 id="batch-upload-title">批量上传照片</h2>
+          <label className="file-drop batch-file-drop">
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/avif"
+              onChange={handleFilesSelected}
+              disabled={uploading || analyzingCount > 0}
+              multiple
+            />
+            <span>{uploadItems.length ? "继续添加照片" : "选择多张照片"}</span>
+            <small>{uploadItems.length ? `已选择 ${uploadItems.length} 张，可继续添加` : "支持一次多选；JPG、PNG、WebP 或 AVIF，每张最大 20MB"}</small>
+          </label>
+
+          <section className={`upload-queue ${uploadItems.length ? "" : "is-empty"}`} aria-live="polite">
+            {!uploadItems.length ? (
+              <div className="metadata-empty">
+                <strong>选择后逐张自动识别</strong>
+                <p>拍摄时间、GPS 地点、相机型号和拍摄参数会自动读取，无需手动填写。</p>
+              </div>
+            ) : uploadItems.map((item, index) => (
+              <article className={`upload-item is-${item.status}`} key={item.id}>
+                <img src={item.preview} alt="" />
+                <div className="upload-item-copy">
+                  <div className="upload-item-heading">
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <strong>{item.metadata?.title || item.file.name}</strong>
+                  </div>
+                  {item.status === "analyzing" ? <p>正在读取拍摄信息与地点名称…</p> : null}
+                  {item.status === "uploading" ? <p>正在安全上传到私有云端…</p> : null}
+                  {item.status === "error" ? <p className="upload-item-error">{item.error}</p> : null}
+                  {item.status === "ready" && item.metadata ? (
+                    <p>{[item.metadata.capturedAt || "时间未知", item.metadata.location || "地点未知", item.metadata.camera].filter(Boolean).join(" · ")}</p>
+                  ) : null}
+                  <small>{(item.file.size / 1024 / 1024).toFixed(1)}MB · {item.metadata?.category || "正在识别"}</small>
+                </div>
+                <button type="button" onClick={() => removeUploadItem(item.id)} disabled={uploading} aria-label={`移除 ${item.file.name}`}>×</button>
+              </article>
+            ))}
+          </section>
+
+          {uploadItems.length ? (
+            <div className="upload-summary">
+              <span>{analyzingCount ? `${analyzingCount} 张正在识别` : `${uploadItems.length} 张等待上传`}</span>
+              <span>将按顺序逐张上传</span>
+            </div>
+          ) : null}
+          <button className="submit-upload" type="submit" disabled={uploading || analyzingCount > 0 || !uploadItems.length}>
+            {uploading
+              ? `正在上传 ${uploadProgress.current}/${uploadProgress.total}`
+              : analyzingCount
+                ? `正在识别 ${analyzingCount} 张照片…`
+                : failedUploadCount
+                  ? `重试失败的 ${failedUploadCount} 张`
+                  : `上传 ${uploadItems.length} 张到云端`}
+          </button>
+        </form>
+      </div>
+    ) : null}
     {manageMode && !user ? <div className="modal-backdrop owner-gate" role="dialog" aria-modal="true" aria-labelledby="owner-gate-title"><div className="owner-gate-card"><a className="owner-gate-close" href="./" aria-label="返回公开相册">×</a><p className="eyebrow">OWNER ACCESS</p><h2 id="owner-gate-title">主人管理</h2><p>使用主人 Google 账号验证后，才会显示上传和删除功能。</p>{googleClientId ? <div className="google-slot google-slot-card" ref={googleCardRef} /> : <div className="auth-placeholder">等待管理登录配置</div>}<a className="owner-gate-back" href="./">返回公开相册</a></div></div> : null}
     {loading ? <div className="page-loader"><span /></div> : null}
   </main>;

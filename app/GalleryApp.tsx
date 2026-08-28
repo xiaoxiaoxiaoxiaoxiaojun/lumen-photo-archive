@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 type GoogleCredentialResponse = { credential: string };
 
@@ -77,6 +77,8 @@ export default function GalleryApp() {
   const [selected, setSelected] = useState<Photo | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
   const headerGoogleRef = useRef<HTMLDivElement>(null);
   const cardGoogleRef = useRef<HTMLDivElement>(null);
 
@@ -170,23 +172,76 @@ export default function GalleryApp() {
     setAuthReady(false);
   }
 
-  async function uploadPhoto(event: FormEvent<HTMLFormElement>) {
+  function selectUploadFiles(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = "";
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+    const existing = new Set(uploadFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+    const validFiles = selectedFiles.filter((file) => allowedTypes.has(file.type) && file.size <= 20 * 1024 * 1024)
+      .filter((file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`));
+    const invalidCount = selectedFiles.filter((file) => !allowedTypes.has(file.type) || file.size > 20 * 1024 * 1024).length;
+    setUploadFiles((current) => [...current, ...validFiles]);
+    if (!validFiles.length && selectedFiles.length) {
+      setNotice(invalidCount ? "请选择 JPG、PNG、WebP 或 AVIF 图片，且每张不超过 20MB。" : "这些照片已经在待上传列表中。");
+    } else if (invalidCount) {
+      setNotice(`已加入 ${validFiles.length} 张照片，另有 ${invalidCount} 张格式或大小不符合要求。`);
+    }
+  }
+
+  function removeUploadFile(fileToRemove: File) {
+    if (uploading) return;
+    setUploadFiles((current) => current.filter((file) => file !== fileToRemove));
+  }
+
+  function closeUpload() {
+    if (uploading) return;
+    setUploadOpen(false);
+    setUploadFiles([]);
+    setUploadProgress({ current: 0, total: 0 });
+  }
+
+  async function uploadPhotos(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!uploadFiles.length) return setNotice("请先选择要上传的照片。");
+    const formElement = event.currentTarget;
+    const sharedForm = new FormData(formElement);
+    const sharedTitle = String(sharedForm.get("title") || "").trim();
     setUploading(true);
     setNotice("");
-    try {
-      const result = await readJson<{ photo: Photo }>(await fetch("/api/photos", {
-        method: "POST",
-        headers: { "x-lumen-request": "upload" },
-        body: new FormData(event.currentTarget),
-      }));
-      setPhotos((current) => [result.photo, ...current]);
+    setUploadProgress({ current: 0, total: uploadFiles.length });
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (const [index, file] of uploadFiles.entries()) {
+      setUploadProgress({ current: index + 1, total: uploadFiles.length });
+      const form = new FormData();
+      form.set("file", file);
+      const fallbackTitle = file.name.replace(/\.[^.]+$/, "") || "未命名作品";
+      form.set("title", sharedTitle ? (uploadFiles.length > 1 ? `${sharedTitle} ${index + 1}` : sharedTitle) : fallbackTitle);
+      for (const field of ["location", "category", "capturedAt"]) form.set(field, String(sharedForm.get(field) || ""));
+      try {
+        const result = await readJson<{ photo: Photo }>(await fetch("/api/photos", {
+          method: "POST",
+          headers: { "x-lumen-request": "upload" },
+          body: form,
+        }));
+        successCount += 1;
+        setPhotos((current) => [result.photo, ...current]);
+        setUploadFiles((current) => current.filter((currentFile) => currentFile !== file));
+      } catch {
+        failureCount += 1;
+      }
+    }
+
+    setUploading(false);
+    setUploadProgress({ current: 0, total: 0 });
+    if (!failureCount) {
       setUploadOpen(false);
-      event.currentTarget.reset();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "上传失败，请重试。");
-    } finally {
-      setUploading(false);
+      setUploadFiles([]);
+      formElement.reset();
+      setNotice(`已成功上传 ${successCount} 张照片。`);
+    } else {
+      setNotice(`已上传 ${successCount} 张，${failureCount} 张失败，可直接重试。`);
     }
   }
 
@@ -306,17 +361,18 @@ export default function GalleryApp() {
 
       {uploadOpen ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="upload-title">
-          <form className="upload-modal" onSubmit={uploadPhoto}>
-            <button className="modal-close" type="button" onClick={() => setUploadOpen(false)} aria-label="关闭">×</button>
-            <p className="eyebrow">ADD TO THE ARCHIVE</p><h2 id="upload-title">上传一张新作品</h2>
-            <label className="file-drop"><input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/avif" required /><span>选择照片</span><small>JPG、PNG、WebP 或 AVIF，最大 20MB</small></label>
+          <form className="upload-modal" onSubmit={uploadPhotos}>
+            <button className="modal-close" type="button" onClick={closeUpload} disabled={uploading} aria-label="关闭">×</button>
+            <p className="eyebrow">ADD TO THE ARCHIVE</p><h2 id="upload-title">批量上传照片</h2>
+            <label className="file-drop"><input type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={selectUploadFiles} disabled={uploading} multiple /><span>{uploadFiles.length ? "继续添加照片" : "选择多张照片"}</span><small>{uploadFiles.length ? `已选择 ${uploadFiles.length} 张` : "支持一次多选；JPG、PNG、WebP 或 AVIF，每张最大 20MB"}</small></label>
+            {uploadFiles.length ? <div className="simple-upload-list">{uploadFiles.map((file, index) => <div key={`${file.name}:${file.size}:${file.lastModified}`}><span>{String(index + 1).padStart(2, "0")}</span><strong>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(1)}MB</small><button type="button" onClick={() => removeUploadFile(file)} disabled={uploading} aria-label={`移除 ${file.name}`}>×</button></div>)}</div> : null}
             <div className="form-grid">
-              <label><span>作品名称</span><input name="title" maxLength={80} placeholder="例如：清晨的风" required /></label>
+              <label><span>作品名称（可选）</span><input name="title" maxLength={72} placeholder="留空则使用文件名，多张会自动编号" /></label>
               <label><span>拍摄地点</span><input name="location" maxLength={80} placeholder="例如：北海道" /></label>
               <label><span>分类</span><select name="category" defaultValue="摄影"><option>摄影</option><option>动物</option><option>个人</option></select></label>
               <label><span>拍摄年份</span><input name="capturedAt" maxLength={20} placeholder="2026" /></label>
             </div>
-            <button className="submit-upload" type="submit" disabled={uploading}>{uploading ? "正在安全上传…" : "上传到云端"}</button>
+            <button className="submit-upload" type="submit" disabled={uploading || !uploadFiles.length}>{uploading ? `正在上传 ${uploadProgress.current}/${uploadProgress.total}` : `上传 ${uploadFiles.length} 张到云端`}</button>
           </form>
         </div>
       ) : null}
