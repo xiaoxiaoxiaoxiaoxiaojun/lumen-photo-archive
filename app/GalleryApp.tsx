@@ -43,6 +43,15 @@ const demoPhotos: Photo[] = [
 ];
 
 const categoryTabs = ["全部", "摄影", "动物", "个人"] as const;
+const viewModes = [
+  { id: "default", label: "默认" },
+  { id: "list", label: "列表" },
+  { id: "gallery", label: "画廊" },
+  { id: "loop", label: "环形" },
+  { id: "spiral", label: "螺旋" },
+] as const;
+
+type ViewMode = typeof viewModes[number]["id"];
 
 function displayCategory(category: string) {
   if (category === "动物" || category === "个人") return category;
@@ -53,6 +62,10 @@ function sizeMasonryCard(image: HTMLImageElement) {
   const card = image.closest<HTMLElement>(".photo-card");
   const grid = card?.parentElement;
   if (!card || !grid) return;
+  if (!grid.classList.contains("view-default")) {
+    card.style.gridRowEnd = "";
+    return;
+  }
   const styles = window.getComputedStyle(grid);
   const rowHeight = Number.parseFloat(styles.gridAutoRows) || 4;
   const rowGap = Number.parseFloat(styles.rowGap) || 0;
@@ -74,6 +87,7 @@ export default function GalleryApp() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [filter, setFilter] = useState("全部");
+  const [viewMode, setViewMode] = useState<ViewMode>("default");
   const [selected, setSelected] = useState<Photo | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -96,6 +110,13 @@ export default function GalleryApp() {
       cancelAnimationFrame(frame);
     };
   }, []);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      document.querySelectorAll<HTMLImageElement>(".photo-grid .photo-image img").forEach(sizeMasonryCard);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [filter, photos, viewMode]);
 
   const loadPhotos = useCallback(async () => {
     const result = await readJson<{ photos: Photo[] }>(await fetch("/api/photos"));
@@ -321,22 +342,31 @@ export default function GalleryApp() {
       {user ? (
         <section className="archive" id="archive" aria-labelledby="archive-title">
           <div className="archive-heading">
-            <div><p className="eyebrow">THE ARCHIVE</p><h2 id="archive-title">摄影档案</h2></div>
+            <div className="archive-title"><p className="eyebrow">THE ARCHIVE</p><h2 id="archive-title">摄影档案</h2></div>
             <div className="archive-controls">
-              <nav className="filters" aria-label="作品分类">
-                {categoryTabs.map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}
+              <nav className="view-switcher" aria-label="照片展示形式">
+                {viewModes.map((mode) => (
+                  <button className={viewMode === mode.id ? "active" : ""} type="button" key={mode.id} aria-pressed={viewMode === mode.id} onClick={() => setViewMode(mode.id)}>
+                    <span aria-hidden="true" />{mode.label}
+                  </button>
+                ))}
               </nav>
-              {user.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}
+              <div className="archive-actions">
+                <nav className="filters" aria-label="作品分类">
+                  {categoryTabs.map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}
+                </nav>
+                {user.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}
+              </div>
             </div>
           </div>
 
-          <div className="photo-grid">
+          <div className={`photo-grid view-${viewMode}`}>
             {filteredPhotos.map((photo, index) => (
               <article className={`photo-card photo-${index % 3}`} key={photo.id}>
                 <button className="photo-image" type="button" onClick={() => setSelected(photo)} aria-label={`查看 ${photo.title}`}>
                   <img src={photo.url} alt={photo.title} loading={index > 2 ? "lazy" : "eager"} onLoad={(event) => sizeMasonryCard(event.currentTarget)} />
                 </button>
-                <div className="photo-caption"><h3>{photo.title}</h3><p>{photo.location} · {photo.capturedAt}</p></div>
+                <div className="photo-caption"><h3>{photo.title}</h3><p><span>{displayCategory(photo.category)}</span><span>{photo.location || "地点未知"} · {photo.capturedAt || "时间未知"}</span></p></div>
               </article>
             ))}
           </div>

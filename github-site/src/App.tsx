@@ -29,6 +29,15 @@ const demoPhotos: Photo[] = [
 }));
 
 const categoryTabs = ["全部", "摄影", "动物", "个人"] as const;
+const viewModes = [
+  { id: "default", label: "默认" },
+  { id: "list", label: "列表" },
+  { id: "gallery", label: "画廊" },
+  { id: "loop", label: "环形" },
+  { id: "spiral", label: "螺旋" },
+] as const;
+
+type ViewMode = typeof viewModes[number]["id"];
 
 type UploadItem = {
   id: string;
@@ -48,6 +57,10 @@ function sizeMasonryCard(image: HTMLImageElement) {
   const card = image.closest<HTMLElement>(".photo-card");
   const grid = card?.parentElement;
   if (!card || !grid) return;
+  if (!grid.classList.contains("view-default")) {
+    card.style.gridRowEnd = "";
+    return;
+  }
   const styles = window.getComputedStyle(grid);
   const rowHeight = Number.parseFloat(styles.gridAutoRows) || 4;
   const rowGap = Number.parseFloat(styles.rowGap) || 0;
@@ -89,6 +102,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [googleClientId, setGoogleClientId] = useState("");
   const [filter, setFilter] = useState("全部");
+  const [viewMode, setViewMode] = useState<ViewMode>("default");
   const [selected, setSelected] = useState<Photo | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -112,6 +126,13 @@ export default function App() {
       cancelAnimationFrame(frame);
     };
   }, []);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      document.querySelectorAll<HTMLImageElement>(".photo-grid .photo-image img").forEach(sizeMasonryCard);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [filter, photos, viewMode]);
   const [manageMode] = useState(() => new URLSearchParams(window.location.search).get("manage") === "1");
   const [heroMotionEnabled] = useState(() => !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
@@ -399,8 +420,26 @@ export default function App() {
       </div>
     </section>
 
-    <section className="archive" id="archive"><div className="archive-heading"><div><p className="eyebrow">THE ARCHIVE</p><h2>摄影档案</h2></div><div className="archive-controls"><nav className="filters" aria-label="作品分类">{categoryTabs.map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}</nav>{user?.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}</div></div>
-      <div className="photo-grid">{filtered.map((photo, index) => <article className={`photo-card photo-${index % 3}`} key={photo.id}><button className="photo-image" type="button" onClick={() => setSelected(photo)}><img src={photo.url} alt={photo.title} onLoad={(event) => sizeMasonryCard(event.currentTarget)} /></button><div className="photo-caption"><h3>{photo.title}</h3><p>{photo.location || "地点未知"} · {photo.capturedAt || "时间未知"}</p></div></article>)}</div></section>
+    <section className="archive" id="archive">
+      <div className="archive-heading">
+        <div className="archive-title"><p className="eyebrow">THE ARCHIVE</p><h2>摄影档案</h2></div>
+        <div className="archive-controls">
+          <nav className="view-switcher" aria-label="照片展示形式">
+            {viewModes.map((mode) => (
+              <button className={viewMode === mode.id ? "active" : ""} type="button" key={mode.id} aria-pressed={viewMode === mode.id} onClick={() => setViewMode(mode.id)}>
+                <span aria-hidden="true" />{mode.label}
+              </button>
+            ))}
+          </nav>
+          <div className="archive-actions">
+            <nav className="filters" aria-label="作品分类">{categoryTabs.map((item) => <button className={filter === item ? "active" : ""} type="button" key={item} onClick={() => setFilter(item)}>{item}</button>)}</nav>
+            {user?.isOwner ? <button className="upload-button" type="button" onClick={() => setUploadOpen(true)}>＋ 上传照片</button> : null}
+          </div>
+        </div>
+      </div>
+      <div className={`photo-grid view-${viewMode}`}>{filtered.map((photo, index) => <article className={`photo-card photo-${index % 3}`} key={photo.id}><button className="photo-image" type="button" onClick={() => setSelected(photo)} aria-label={`查看 ${photo.title}`}><img src={photo.url} alt={photo.title} loading={index > 2 ? "lazy" : "eager"} onLoad={(event) => sizeMasonryCard(event.currentTarget)} /></button><div className="photo-caption"><h3>{photo.title}</h3><p><span>{displayCategory(photo.category)}</span><span>{photo.location || "地点未知"} · {photo.capturedAt || "时间未知"}</span></p></div></article>)}</div>
+      {!filtered.length ? <div className="empty-state">这个分类里还没有照片。</div> : null}
+    </section>
 
     <footer><p><span className="legal-links"><a href="privacy.html">隐私政策</a> · <a href="terms.html">服务条款</a></span><br />© 2026 · KEEP THE LIGHT, CLOSE.</p></footer>
 
