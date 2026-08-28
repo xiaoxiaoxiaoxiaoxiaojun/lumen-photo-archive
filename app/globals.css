@@ -24,7 +24,7 @@ img { display: block; width: 100%; }
 
 .hero { position: relative; isolation: isolate; min-height: 100vh; min-height: 100svh; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 110px 3.2vw 72px; background: #172019; color: white; text-align: center; }
 .eyebrow { margin: 0 0 28px; font-size: .66rem; letter-spacing: .17em; color: var(--muted); }
-.hero-copy { position: relative; z-index: 3; width: min(1100px, 94vw); min-width: 0; transform: translateY(-20px); }
+.hero-copy { position: relative; z-index: 3; width: min(1100px, 94vw); min-width: 0; transform: translateY(-40px); }
 .hero .eyebrow { color: rgba(255,255,255,.68); }
 .hero h1 { max-width: none; margin: 0 auto; font-family: var(--font-serif), serif; font-size: clamp(3.6rem, 6.2vw, 6rem); line-height: .98; font-weight: 400; letter-spacing: -.04em; white-space: nowrap; }
 .hero-intro { max-width: 430px; margin: 36px auto 0; color: rgba(255,255,255,.78); font-family: var(--font-serif), serif; line-height: 1.9; font-size: .98rem; overflow-wrap: anywhere; }
