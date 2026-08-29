@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deletePhoto as deleteCloudPhoto,
   deletePhotos as deleteCloudPhotos,
@@ -11,9 +11,11 @@ import {
   restoreUser,
   updatePhoto as updateCloudPhoto,
   uploadPhoto as uploadCloudPhoto,
+  uploadPhotoThumbnail,
   type Photo,
   type SessionUser,
 } from "./api";
+import { createOptimizedThumbnail } from "./image-optimization";
 import { extractPhotoMetadata, type PhotoMetadata } from "./photo-metadata";
 import { ArchiveViews, archiveViewModes, type ArchiveViewMode } from "../../app/ArchiveViews";
 
@@ -101,6 +103,8 @@ export default function App() {
   const googleCardRef = useRef<HTMLDivElement>(null);
   const analysisIdRef = useRef(0);
   const uploadItemsRef = useRef<UploadItem[]>([]);
+  const photosRef = useRef<Photo[]>([]);
+  const thumbnailBackfillStarted = useRef(false);
 
   const [manageMode] = useState(() => new URLSearchParams(window.location.search).get("manage") === "1");
   const [heroMotionEnabled] = useState(() => !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -170,9 +174,56 @@ export default function App() {
     uploadItemsRef.current = uploadItems;
   }, [uploadItems]);
 
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
+
   useEffect(() => () => {
     uploadItemsRef.current.forEach((item) => URL.revokeObjectURL(item.preview));
   }, []);
+
+  useEffect(() => {
+    if (!user?.isOwner || thumbnailBackfillStarted.current) return;
+    const pending = photosRef.current.filter((photo) => !photo.id.startsWith("demo-") && !photo.hasThumbnail);
+    if (!pending.length) return;
+    thumbnailBackfillStarted.current = true;
+    const controller = new AbortController();
+    let cancelled = false;
+
+    const waitForIdle = () => new Promise<void>((resolve) => {
+      if ("requestIdleCallback" in window) {
+        window.requestIdleCallback(() => resolve(), { timeout: 1200 });
+      } else {
+        globalThis.setTimeout(resolve, 80);
+      }
+    });
+
+    void (async () => {
+      let optimizedCount = 0;
+      for (const photo of pending) {
+        if (cancelled) break;
+        try {
+          await waitForIdle();
+          const response = await fetch(photo.url, { signal: controller.signal });
+          if (!response.ok) continue;
+          const original = await response.blob();
+          const thumbnail = await createOptimizedThumbnail(original, photo.title);
+          const updated = await uploadPhotoThumbnail(photo.id, thumbnail.file, thumbnail.width, thumbnail.height);
+          if (cancelled) break;
+          optimizedCount += 1;
+          setPhotos((current) => current.map((item) => item.id === updated.id ? updated : item));
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") break;
+        }
+      }
+      if (!cancelled && optimizedCount) setNotice(`已在后台优化 ${optimizedCount} 张旧照片，之后浏览会更流畅。`);
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [user?.isOwner]);
 
   function closeUpload() {
     if (uploading) return;
@@ -297,6 +348,10 @@ export default function App() {
       form.set("technical", metadata.technical);
 
       try {
+        const thumbnail = await createOptimizedThumbnail(item.file, item.file.name);
+        form.set("thumbnail", thumbnail.file);
+        form.set("width", String(thumbnail.width));
+        form.set("height", String(thumbnail.height));
         const photo = await uploadCloudPhoto(form);
         successCount += 1;
         setPhotos((current) => [photo, ...current]);
@@ -429,7 +484,10 @@ export default function App() {
   }
 
   const shown = photos.length ? photos : demoPhotos;
-  const filtered = filter === "全部" ? shown : shown.filter((photo) => displayCategory(photo.category) === filter);
+  const filtered = useMemo(
+    () => filter === "全部" ? shown : shown.filter((photo) => displayCategory(photo.category) === filter),
+    [filter, shown],
+  );
   const displayName = user?.name || user?.email || "访客";
   const analyzingCount = uploadItems.filter((item) => item.status === "analyzing").length;
   const failedUploadCount = uploadItems.filter((item) => item.status === "error").length;

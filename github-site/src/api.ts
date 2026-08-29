@@ -17,6 +17,10 @@ export type Photo = {
   technical?: string;
   createdAt: number;
   url: string;
+  thumbnailUrl?: string;
+  hasThumbnail?: boolean;
+  width?: number;
+  height?: number;
 };
 
 export type PhotoChanges = Pick<Photo, "title" | "category" | "location" | "capturedAt"> & {
@@ -87,6 +91,17 @@ export async function getPhotos() {
 
 export async function uploadPhoto(form: FormData) {
   return (await request<{ photo: Photo }>("/api/photos", { method: "POST", body: form })).photo;
+}
+
+export async function uploadPhotoThumbnail(id: string, thumbnail: File, width: number, height: number) {
+  const form = new FormData();
+  form.set("thumbnail", thumbnail);
+  form.set("width", String(width));
+  form.set("height", String(height));
+  return (await request<{ photo: Photo }>(`/api/photos/${encodeURIComponent(id)}/thumbnail`, {
+    method: "POST",
+    body: form,
+  })).photo;
 }
 
 export async function reverseGeocode(latitude: number, longitude: number) {

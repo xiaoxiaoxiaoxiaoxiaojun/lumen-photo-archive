@@ -34,12 +34,19 @@ type PhotoRow = {
   lens: string;
   technical: string;
   created_at: number;
+  thumbnail_key?: string;
+  thumbnail_version?: string;
+  thumbnail_content_type?: string;
+  thumbnail_size?: number;
+  width?: number;
+  height?: number;
 };
 
 const googleKeys = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
+const MAX_THUMBNAIL_BYTES = 3 * 1024 * 1024;
 const STORAGE_LIMIT_BYTES = 9 * 1024 * 1024 * 1024;
 const MEDIA_LINK_LIFETIME_SECONDS = 6 * 60 * 60;
 let schemaReady = false;
@@ -98,6 +105,12 @@ async function ensureSchema(env: Env) {
       camera TEXT NOT NULL DEFAULT '',
       lens TEXT NOT NULL DEFAULT '',
       technical TEXT NOT NULL DEFAULT '',
+      thumbnail_key TEXT NOT NULL DEFAULT '',
+      thumbnail_version TEXT NOT NULL DEFAULT '',
+      thumbnail_content_type TEXT NOT NULL DEFAULT '',
+      thumbnail_size INTEGER NOT NULL DEFAULT 0,
+      width INTEGER NOT NULL DEFAULT 0,
+      height INTEGER NOT NULL DEFAULT 0,
       owner_sub TEXT NOT NULL,
       created_at INTEGER NOT NULL
     )`),
@@ -123,6 +136,24 @@ async function ensureSchema(env: Env) {
   }
   if (!columns.results.some((column) => column.name === "technical")) {
     await env.DB.prepare("ALTER TABLE photos ADD COLUMN technical TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!columns.results.some((column) => column.name === "thumbnail_key")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN thumbnail_key TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!columns.results.some((column) => column.name === "thumbnail_version")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN thumbnail_version TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!columns.results.some((column) => column.name === "thumbnail_content_type")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN thumbnail_content_type TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!columns.results.some((column) => column.name === "thumbnail_size")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN thumbnail_size INTEGER NOT NULL DEFAULT 0").run();
+  }
+  if (!columns.results.some((column) => column.name === "width")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN width INTEGER NOT NULL DEFAULT 0").run();
+  }
+  if (!columns.results.some((column) => column.name === "height")) {
+    await env.DB.prepare("ALTER TABLE photos ADD COLUMN height INTEGER NOT NULL DEFAULT 0").run();
   }
   schemaReady = true;
 }
@@ -174,6 +205,23 @@ async function b2Delete(env: Env, objectKey: string, versionId: string) {
 async function b2Get(env: Env, objectKey: string) {
   const { client } = b2Settings(env);
   return client.fetch(b2ObjectUrl(env, objectKey), { method: "GET" });
+}
+
+type StoredPhotoObjects = {
+  object_key: string;
+  object_version: string;
+  thumbnail_key?: string;
+  thumbnail_version?: string;
+};
+
+async function deleteStoredPhoto(env: Env, row: StoredPhotoObjects) {
+  await b2Delete(env, row.object_key, row.object_version);
+  if (row.thumbnail_key && row.thumbnail_version) {
+    // The original is the source of truth. A stale thumbnail is safe to clean up
+    // later, while failing the whole deletion after removing it can leave a
+    // temporarily broken gallery card.
+    await b2Delete(env, row.thumbnail_key, row.thumbnail_version).catch(() => undefined);
+  }
 }
 
 function bytesToBase64Url(bytes: Uint8Array) {
@@ -249,17 +297,35 @@ function cleanText(value: unknown, max = 80) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
-async function mediaUrl(request: Request, env: Env, id: string) {
+function cleanDimension(value: unknown) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 20_000 ? parsed : 0;
+}
+
+function validThumbnail(value: FormDataEntryValue | null): value is File {
+  return value instanceof File
+    && ["image/webp", "image/jpeg"].includes(value.type)
+    && value.size > 0
+    && value.size <= MAX_THUMBNAIL_BYTES;
+}
+
+type MediaVariant = "original" | "thumbnail";
+
+async function mediaUrl(request: Request, env: Env, id: string, variant: MediaVariant = "original") {
   if (!env.SESSION_SECRET) throw new Error("SESSION_SECRET is missing");
-  const exp = Math.floor(Date.now() / 1000) + MEDIA_LINK_LIFETIME_SECONDS;
-  const sig = await signValue(`${id}.${exp}`, env.SESSION_SECRET);
+  const now = Math.floor(Date.now() / 1000);
+  const exp = (Math.floor(now / MEDIA_LINK_LIFETIME_SECONDS) + 2) * MEDIA_LINK_LIFETIME_SECONDS;
+  const sig = await signValue(`${id}.${variant}.${exp}`, env.SESSION_SECRET);
   const url = new URL(`/media/${encodeURIComponent(id)}`, request.url);
+  if (variant === "thumbnail") url.searchParams.set("variant", variant);
   url.searchParams.set("exp", String(exp));
   url.searchParams.set("sig", sig);
   return url.toString();
 }
 
 async function photoFromRow(request: Request, env: Env, row: PhotoRow) {
+  const originalUrl = await mediaUrl(request, env, row.id);
+  const hasThumbnail = Boolean(row.thumbnail_key);
   return {
     id: row.id,
     title: row.title,
@@ -270,7 +336,11 @@ async function photoFromRow(request: Request, env: Env, row: PhotoRow) {
     lens: row.lens,
     technical: row.technical,
     createdAt: row.created_at,
-    url: await mediaUrl(request, env, row.id),
+    url: originalUrl,
+    thumbnailUrl: hasThumbnail ? await mediaUrl(request, env, row.id, "thumbnail") : originalUrl,
+    hasThumbnail,
+    width: Number(row.width || 0),
+    height: Number(row.height || 0),
   };
 }
 
@@ -329,18 +399,21 @@ async function reverseLocation(env: Env, latitude: number, longitude: number) {
   return location;
 }
 
-async function verifyMediaSignature(url: URL, env: Env, id: string) {
+async function verifyMediaSignature(url: URL, env: Env, id: string, variant: MediaVariant) {
   if (!env.SESSION_SECRET) return false;
   const exp = Number(url.searchParams.get("exp"));
   const signature = url.searchParams.get("sig") || "";
   if (!Number.isInteger(exp) || exp <= Math.floor(Date.now() / 1000) || !signature) return false;
   try {
-    return crypto.subtle.verify(
+    const key = await importSigningKey(env.SESSION_SECRET);
+    const valid = await crypto.subtle.verify(
       "HMAC",
-      await importSigningKey(env.SESSION_SECRET),
+      key,
       base64UrlToBytes(signature),
-      encoder.encode(`${id}.${exp}`),
+      encoder.encode(`${id}.${variant}.${exp}`),
     );
+    if (valid || variant !== "original") return valid;
+    return crypto.subtle.verify("HMAC", key, base64UrlToBytes(signature), encoder.encode(`${id}.${exp}`));
   } catch {
     return false;
   }
@@ -421,7 +494,9 @@ async function handleApi(request: Request, env: Env) {
     if (!env.SESSION_SECRET) return json(request, env, { error: "云端尚未配置完成。" }, { status: 503 });
     await ensureSchema(env);
     const result = await env.DB.prepare(
-      "SELECT id, title, category, location, captured_at, camera, lens, technical, created_at FROM photos ORDER BY created_at DESC",
+      `SELECT id, title, category, location, captured_at, camera, lens, technical, created_at,
+              thumbnail_key, thumbnail_version, thumbnail_content_type, thumbnail_size, width, height
+       FROM photos ORDER BY created_at DESC`,
     ).all<PhotoRow>();
     const photos = await Promise.all(result.results.map((row) => photoFromRow(request, env, row)));
     return json(request, env, { photos });
@@ -434,6 +509,7 @@ async function handleApi(request: Request, env: Env) {
     await ensureSchema(env);
     const form = await request.formData();
     const file = form.get("file");
+    const thumbnail = form.get("thumbnail");
     if (!(file instanceof File) || !file.type.startsWith("image/")) {
       return json(request, env, { error: "请选择一张有效的图片。" }, { status: 400 });
     }
@@ -442,8 +518,12 @@ async function handleApi(request: Request, env: Env) {
     if (!allowedTypes.has(file.type)) {
       return json(request, env, { error: "目前支持 JPG、PNG、WebP 和 AVIF。" }, { status: 415 });
     }
-    const usage = await env.DB.prepare("SELECT COALESCE(SUM(file_size), 0) AS bytes FROM photos").first<{ bytes: number }>();
-    if (Number(usage?.bytes || 0) + file.size > STORAGE_LIMIT_BYTES) {
+    if (thumbnail !== null && !validThumbnail(thumbnail)) {
+      return json(request, env, { error: "照片缩略图无效，请重新选择照片。" }, { status: 400 });
+    }
+    const thumbnailSize = thumbnail instanceof File ? thumbnail.size : 0;
+    const usage = await env.DB.prepare("SELECT COALESCE(SUM(file_size + thumbnail_size), 0) AS bytes FROM photos").first<{ bytes: number }>();
+    if (Number(usage?.bytes || 0) + file.size + thumbnailSize > STORAGE_LIMIT_BYTES) {
       return json(request, env, { error: "云端照片已接近 9GB 安全上限，请先删除部分作品。" }, { status: 507 });
     }
     const title = cleanText(form.get("title"));
@@ -457,25 +537,91 @@ async function handleApi(request: Request, env: Env) {
     const id = crypto.randomUUID();
     const extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/avif": "avif" }[file.type] || "img";
     const objectKey = `photos/${id}.${extension}`;
+    const thumbnailKey = thumbnail instanceof File ? `thumbnails/${id}.${thumbnail.type === "image/jpeg" ? "jpg" : "webp"}` : "";
+    const width = cleanDimension(form.get("width"));
+    const height = cleanDimension(form.get("height"));
     const createdAt = Date.now();
     let objectVersion = "";
+    let thumbnailVersion = "";
     try {
       objectVersion = await b2Put(env, objectKey, file);
+      if (thumbnail instanceof File) thumbnailVersion = await b2Put(env, thumbnailKey, thumbnail);
     } catch {
+      if (objectVersion) await b2Delete(env, objectKey, objectVersion).catch(() => undefined);
       return json(request, env, { error: "照片云端暂时无法上传，请稍后重试。" }, { status: 502 });
     }
     try {
       await env.DB.prepare(
         `INSERT INTO photos
-          (id, object_key, object_version, title, category, location, captured_at, camera, lens, technical, content_type, file_size, owner_sub, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, objectKey, objectVersion, title, category, location, capturedAt, camera, lens, technical, file.type, file.size, user.sub, createdAt).run();
+          (id, object_key, object_version, title, category, location, captured_at, camera, lens, technical,
+           content_type, file_size, thumbnail_key, thumbnail_version, thumbnail_content_type, thumbnail_size,
+           width, height, owner_sub, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        id, objectKey, objectVersion, title, category, location, capturedAt, camera, lens, technical,
+        file.type, file.size, thumbnailKey, thumbnailVersion, thumbnail instanceof File ? thumbnail.type : "", thumbnailSize,
+        width, height, user.sub, createdAt,
+      ).run();
     } catch (error) {
+      if (thumbnailVersion) await b2Delete(env, thumbnailKey, thumbnailVersion).catch(() => undefined);
       await b2Delete(env, objectKey, objectVersion);
       throw error;
     }
-    const photo = await photoFromRow(request, env, { id, title, category, location, captured_at: capturedAt, camera, lens, technical, created_at: createdAt });
+    const photo = await photoFromRow(request, env, {
+      id, title, category, location, captured_at: capturedAt, camera, lens, technical, created_at: createdAt,
+      thumbnail_key: thumbnailKey, thumbnail_version: thumbnailVersion,
+      thumbnail_content_type: thumbnail instanceof File ? thumbnail.type : "", thumbnail_size: thumbnailSize,
+      width, height,
+    });
     return json(request, env, { photo }, { status: 201 });
+  }
+
+  const thumbnailMatch = path.match(/^\/api\/photos\/([^/]+)\/thumbnail$/);
+  if (thumbnailMatch && request.method === "POST") {
+    if (!secureWriteRequest(request, env)) return json(request, env, { error: "缩略图请求未通过安全检查。" }, { status: 403 });
+    const user = await readSession(request, env);
+    if (!user?.isOwner) return json(request, env, { error: "只有相册主人可以优化照片。" }, { status: 403 });
+    await ensureSchema(env);
+    const id = decodeURIComponent(thumbnailMatch[1]);
+    const form = await request.formData();
+    const thumbnail = form.get("thumbnail");
+    if (!validThumbnail(thumbnail)) return json(request, env, { error: "照片缩略图无效。" }, { status: 400 });
+    const width = cleanDimension(form.get("width"));
+    const height = cleanDimension(form.get("height"));
+    if (!width || !height) return json(request, env, { error: "照片尺寸无效。" }, { status: 400 });
+    const existing = await env.DB.prepare(
+      `SELECT id, title, category, location, captured_at, camera, lens, technical, created_at,
+              thumbnail_key, thumbnail_version, thumbnail_content_type, thumbnail_size, width, height
+       FROM photos WHERE id = ?`,
+    ).bind(id).first<PhotoRow>();
+    if (!existing) return json(request, env, { error: "没有找到这张照片。" }, { status: 404 });
+
+    const thumbnailKey = `thumbnails/${id}.${thumbnail.type === "image/jpeg" ? "jpg" : "webp"}`;
+    let thumbnailVersion = "";
+    try {
+      thumbnailVersion = await b2Put(env, thumbnailKey, thumbnail);
+      await env.DB.prepare(
+        `UPDATE photos
+         SET thumbnail_key = ?, thumbnail_version = ?, thumbnail_content_type = ?, thumbnail_size = ?, width = ?, height = ?
+         WHERE id = ?`,
+      ).bind(thumbnailKey, thumbnailVersion, thumbnail.type, thumbnail.size, width, height, id).run();
+    } catch {
+      if (thumbnailVersion) await b2Delete(env, thumbnailKey, thumbnailVersion).catch(() => undefined);
+      return json(request, env, { error: "缩略图暂时无法保存，请稍后重试。" }, { status: 502 });
+    }
+    if (existing.thumbnail_key && existing.thumbnail_version && existing.thumbnail_version !== thumbnailVersion) {
+      await b2Delete(env, existing.thumbnail_key, existing.thumbnail_version).catch(() => undefined);
+    }
+    const photo = await photoFromRow(request, env, {
+      ...existing,
+      thumbnail_key: thumbnailKey,
+      thumbnail_version: thumbnailVersion,
+      thumbnail_content_type: thumbnail.type,
+      thumbnail_size: thumbnail.size,
+      width,
+      height,
+    });
+    return json(request, env, { photo });
   }
 
   if (path === "/api/photos/batch-delete" && request.method === "POST") {
@@ -492,11 +638,11 @@ async function handleApi(request: Request, env: Env) {
     const failed: Array<{ id: string; error: string }> = [];
     for (let offset = 0; offset < ids.length; offset += 5) {
       const results = await Promise.all(ids.slice(offset, offset + 5).map(async (id) => {
-        const row = await env.DB.prepare("SELECT object_key, object_version FROM photos WHERE id = ?")
-          .bind(id).first<{ object_key: string; object_version: string }>();
+        const row = await env.DB.prepare("SELECT object_key, object_version, thumbnail_key, thumbnail_version FROM photos WHERE id = ?")
+          .bind(id).first<StoredPhotoObjects>();
         if (!row) return { id, error: "没有找到这张照片。" };
         try {
-          await b2Delete(env, row.object_key, row.object_version);
+          await deleteStoredPhoto(env, row);
           await env.DB.prepare("DELETE FROM photos WHERE id = ?").bind(id).run();
           return { id };
         } catch {
@@ -529,8 +675,10 @@ async function handleApi(request: Request, env: Env) {
     const lens = cleanText(body.lens, 120);
     const technical = cleanText(body.technical, 120);
     await ensureSchema(env);
-    const existing = await env.DB.prepare("SELECT id, created_at FROM photos WHERE id = ?")
-      .bind(id).first<{ id: string; created_at: number }>();
+    const existing = await env.DB.prepare(
+      `SELECT id, created_at, thumbnail_key, thumbnail_version, thumbnail_content_type, thumbnail_size, width, height
+       FROM photos WHERE id = ?`,
+    ).bind(id).first<PhotoRow>();
     if (!existing) return json(request, env, { error: "没有找到这张照片。" }, { status: 404 });
     await env.DB.prepare(
       `UPDATE photos
@@ -547,6 +695,12 @@ async function handleApi(request: Request, env: Env) {
       lens,
       technical,
       created_at: existing.created_at,
+      thumbnail_key: existing.thumbnail_key,
+      thumbnail_version: existing.thumbnail_version,
+      thumbnail_content_type: existing.thumbnail_content_type,
+      thumbnail_size: existing.thumbnail_size,
+      width: existing.width,
+      height: existing.height,
     });
     return json(request, env, { photo });
   }
@@ -557,11 +711,11 @@ async function handleApi(request: Request, env: Env) {
     if (!user?.isOwner) return json(request, env, { error: "只有相册主人可以删除照片。" }, { status: 403 });
     await ensureSchema(env);
     const id = decodeURIComponent(path.slice("/api/photos/".length));
-    const row = await env.DB.prepare("SELECT object_key, object_version FROM photos WHERE id = ?")
-      .bind(id).first<{ object_key: string; object_version: string }>();
+    const row = await env.DB.prepare("SELECT object_key, object_version, thumbnail_key, thumbnail_version FROM photos WHERE id = ?")
+      .bind(id).first<StoredPhotoObjects>();
     if (!row) return json(request, env, { error: "没有找到这张照片。" }, { status: 404 });
     try {
-      await b2Delete(env, row.object_key, row.object_version);
+      await deleteStoredPhoto(env, row);
     } catch {
       return json(request, env, { error: "照片云端暂时无法删除，请稍后重试。" }, { status: 502 });
     }
@@ -576,17 +730,21 @@ async function handleMedia(request: Request, env: Env) {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/media/") || request.method !== "GET") return null;
   const id = decodeURIComponent(url.pathname.slice("/media/".length));
-  if (!id || !(await verifyMediaSignature(url, env, id))) return new Response("Forbidden", { status: 403 });
+  const variant: MediaVariant = url.searchParams.get("variant") === "thumbnail" ? "thumbnail" : "original";
+  if (!id || !(await verifyMediaSignature(url, env, id, variant))) return new Response("Forbidden", { status: 403 });
   await ensureSchema(env);
-  const row = await env.DB.prepare("SELECT object_key, content_type FROM photos WHERE id = ?")
-    .bind(id).first<{ object_key: string; content_type: string }>();
+  const row = await env.DB.prepare(
+    "SELECT object_key, content_type, thumbnail_key, thumbnail_content_type FROM photos WHERE id = ?",
+  ).bind(id).first<{ object_key: string; content_type: string; thumbnail_key: string; thumbnail_content_type: string }>();
   if (!row) return new Response("Not found", { status: 404 });
-  const object = await b2Get(env, row.object_key);
+  const useThumbnail = variant === "thumbnail" && Boolean(row.thumbnail_key);
+  const object = await b2Get(env, useThumbnail ? row.thumbnail_key : row.object_key);
   if (!object.ok || !object.body) return new Response("Not found", { status: object.status === 404 ? 404 : 502 });
   return new Response(object.body, {
     headers: {
-      "content-type": row.content_type,
-      "cache-control": `private, max-age=${MEDIA_LINK_LIFETIME_SECONDS}`,
+      "content-type": useThumbnail ? row.thumbnail_content_type : row.content_type,
+      "cache-control": `public, max-age=${MEDIA_LINK_LIFETIME_SECONDS}, immutable`,
+      ...corsHeaders(request, env),
       "x-content-type-options": "nosniff",
     },
   });
