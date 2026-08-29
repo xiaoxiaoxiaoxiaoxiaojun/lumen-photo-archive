@@ -103,13 +103,13 @@ img { display: block; width: 100%; }
 
 /* Gallery and spiral use the same wheel-controlled 3D engine as the reference. */
 .orbit-view { width: min(100%, 1540px); margin: 0 auto; }
-.orbit-stage { position: relative; width: 100%; height: clamp(560px, 68vh, 760px); overflow: hidden; outline: none; perspective: var(--orbit-perspective); cursor: ns-resize; }
+.orbit-stage { position: relative; width: 100%; height: clamp(560px, 68vh, 760px); overflow: hidden; outline: none; perspective: var(--orbit-perspective); cursor: ns-resize; contain: layout paint style; }
 .orbit-stage:focus-visible { box-shadow: inset 0 0 0 1px rgba(215,255,50,.65); }
-.orbit-scene { position: absolute; inset: 0; transform-style: preserve-3d; }
-.orbit-card { position: absolute; top: 50%; left: 50%; transform-style: preserve-3d; will-change: transform; }
+.orbit-scene { position: absolute; inset: 0; transform-style: preserve-3d; will-change: transform; }
+.orbit-card { position: absolute; top: 50%; left: 50%; transform-style: preserve-3d; }
 .orbit-card-shell { position: relative; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; color: white; cursor: pointer; transform-style: preserve-3d; }
 .orbit-card-shell:disabled { cursor: not-allowed; opacity: .45; }
-.orbit-face { position: absolute; inset: 0; display: block; overflow: hidden; border-radius: 2px; background: #2b2c27; box-shadow: 0 20px 46px rgba(0,0,0,.28); backface-visibility: hidden; transform-style: preserve-3d; }
+.orbit-face { position: absolute; inset: 0; display: block; overflow: hidden; border-radius: 2px; background: #2b2c27; box-shadow: 0 20px 46px rgba(0,0,0,.28); backface-visibility: hidden; transform-style: preserve-3d; contain: paint; }
 .orbit-back { transform: rotateY(180deg); }
 .orbit-face::after { position: absolute; inset: 50% 0 0; content: ""; background: linear-gradient(transparent, rgba(4,5,4,.7)); pointer-events: none; }
 .orbit-face img { width: 100%; height: 100%; object-fit: cover; transition: transform .6s cubic-bezier(.2,.7,.1,1); }
