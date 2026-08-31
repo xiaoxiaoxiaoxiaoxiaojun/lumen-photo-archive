@@ -105,9 +105,9 @@ export default function App() {
   const uploadItemsRef = useRef<UploadItem[]>([]);
   const photosRef = useRef<Photo[]>([]);
   const thumbnailBackfillStarted = useRef(false);
+  const heroVideoRef = useRef<HTMLVideoElement>(null);
 
   const [manageMode] = useState(() => new URLSearchParams(window.location.search).get("manage") === "1");
-  const [heroMotionEnabled] = useState(() => !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   const loadArchive = useCallback(async () => {
     setPhotos(await getPhotos());
@@ -169,6 +169,58 @@ export default function App() {
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, [selected]);
+
+  useEffect(() => {
+    const video = heroVideoRef.current;
+    if (!video) return;
+    let retryTimer = 0;
+
+    const requestPlayback = () => {
+      window.clearTimeout(retryTimer);
+      if (document.visibilityState !== "visible") return;
+      video.muted = true;
+      video.defaultMuted = true;
+      if (video.paused) void video.play().catch(() => undefined);
+    };
+    const retryPlayback = () => {
+      window.clearTimeout(retryTimer);
+      retryTimer = window.setTimeout(requestPlayback, 160);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") requestPlayback();
+    };
+    const handleEnded = () => {
+      video.currentTime = 0;
+      requestPlayback();
+    };
+
+    if (video.networkState === HTMLMediaElement.NETWORK_EMPTY) video.load();
+    video.addEventListener("loadeddata", requestPlayback);
+    video.addEventListener("canplay", requestPlayback);
+    video.addEventListener("pause", retryPlayback);
+    video.addEventListener("stalled", retryPlayback);
+    video.addEventListener("ended", handleEnded);
+    document.addEventListener("visibilitychange", handleVisibility);
+    document.addEventListener("pointerdown", requestPlayback, { once: true });
+    document.addEventListener("keydown", requestPlayback, { once: true });
+    window.addEventListener("focus", requestPlayback);
+    window.addEventListener("pageshow", requestPlayback);
+    requestPlayback();
+
+    return () => {
+      window.clearTimeout(retryTimer);
+      video.removeEventListener("loadeddata", requestPlayback);
+      video.removeEventListener("canplay", requestPlayback);
+      video.removeEventListener("pause", retryPlayback);
+      video.removeEventListener("stalled", retryPlayback);
+      video.removeEventListener("ended", handleEnded);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      document.removeEventListener("pointerdown", requestPlayback);
+      document.removeEventListener("keydown", requestPlayback);
+      window.removeEventListener("focus", requestPlayback);
+      window.removeEventListener("pageshow", requestPlayback);
+    };
+  }, []);
 
   useEffect(() => {
     uploadItemsRef.current = uploadItems;
@@ -509,12 +561,13 @@ export default function App() {
       <div className="hero-copy"><p className="eyebrow">PRIVATE PHOTOGRAPHY ARCHIVE / 2026</p><h1>让光，替我们记住</h1><p className="hero-intro">一个安静、私密的摄影空间。收藏旅途与日常，也把珍贵的画面分享给重要的人</p></div>
       <div className="hero-frame">
         <video
+          ref={heroVideoRef}
           className="hero-video"
-          autoPlay={heroMotionEnabled}
+          autoPlay
           muted
           loop
           playsInline
-          preload="metadata"
+          preload="auto"
           poster={`${import.meta.env.BASE_URL}media/lumen-hero-poster.jpg`}
           aria-label="光影中的人物剪影"
         >
