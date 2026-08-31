@@ -312,36 +312,66 @@ function ListArchive<T extends ArchivePhoto>({
 
 type OrbitMode = "gallery" | "spiral";
 
-const orbitSettings = {
-  gallery: { itemWidth: 200, itemHeight: 300, minRadius: 380, maxRadius: 1400, cardGap: 96, perspective: 760, tiltX: 0, tiltZ: 0 },
-  spiral: { itemWidth: 180, itemHeight: 270, minRadius: 340, maxRadius: 900, cardGap: 84, perspective: 680, tiltX: 0, tiltZ: 0 },
+const gallerySettings = {
+  itemWidth: 180,
+  itemHeight: 270,
+  minRadius: 340,
+  maxRadius: 900,
+  cardGap: 84,
+  perspective: 680,
+  tiltX: 0,
+  tiltZ: 0,
 } as const;
 
-type OrbitSettings = (typeof orbitSettings)[OrbitMode];
+const spiralSettings = {
+  itemWidth: 180,
+  itemHeight: 270,
+  radius: 230,
+  perspective: 550,
+  tiltX: 0,
+  tiltZ: 0,
+  turns: 3,
+} as const;
 
-function orbitRadius(photoCount: number, settings: OrbitSettings) {
-  const radiusForGap = Math.max(1, photoCount) * (settings.itemWidth + settings.cardGap) / (Math.PI * 2);
-  return Math.min(settings.maxRadius, Math.max(settings.minRadius, radiusForGap));
+function galleryRadius(photoCount: number) {
+  const radiusForGap = Math.max(1, photoCount) * (gallerySettings.itemWidth + gallerySettings.cardGap) / (Math.PI * 2);
+  return Math.min(gallerySettings.maxRadius, Math.max(gallerySettings.minRadius, radiusForGap));
 }
 
-function orbitTransform(
+function galleryCardTransform(
   index: number,
   cardCount: number,
   angleStep: number,
   radius: number,
-  mode: OrbitMode,
 ) {
   const reverseIndex = index === 0 ? 0 : cardCount - index;
   const theta = angleStep * reverseIndex;
   const radians = theta * Math.PI / 180;
   const x = Math.cos(radians) * radius;
   const z = Math.sin(radians) * radius;
-  const rotateY = -theta + 90 + (mode === "spiral" ? Math.sin(radians) * 6 : 0);
+  const rotateY = -theta + 90 + Math.sin(radians) * 6;
   return `translate(-50%, -50%) translate3d(${x.toFixed(3)}px, 0, ${z.toFixed(3)}px) rotateY(${rotateY.toFixed(3)}deg)`;
 }
 
-function orbitSceneTransform(angle: number, settings: OrbitSettings) {
-  return `rotateX(${settings.tiltX}deg) rotateZ(${settings.tiltZ}deg) rotateY(${angle.toFixed(3)}deg)`;
+function spiralCardTransform(index: number, photoCount: number, angleStep: number, angle: number, stageHeight: number) {
+  const cardCount = photoCount * spiralSettings.turns;
+  const reverseIndex = index === 0 ? 0 : cardCount - index;
+  const theta = angleStep * reverseIndex + angle;
+  const radians = theta * Math.PI / 180;
+  const x = Math.cos(radians) * spiralSettings.radius;
+  const z = Math.sin(radians) * spiralSettings.radius;
+  const spiralProgress = (((((theta - 270) / 360) % spiralSettings.turns) + spiralSettings.turns) % spiralSettings.turns) - spiralSettings.turns / 2;
+  const y = spiralProgress * stageHeight * 1.47;
+  const rotateY = -theta + 90;
+  return `translate(-50%, -50%) translate3d(${x.toFixed(3)}px, ${y.toFixed(3)}px, ${z.toFixed(3)}px) rotateY(${rotateY.toFixed(3)}deg)`;
+}
+
+function gallerySceneTransform(angle: number) {
+  return `rotateX(${gallerySettings.tiltX}deg) rotateZ(${gallerySettings.tiltZ}deg) rotateY(${angle.toFixed(3)}deg)`;
+}
+
+function spiralSceneTransform() {
+  return `rotateX(${spiralSettings.tiltX}deg) rotateZ(${spiralSettings.tiltZ}deg)`;
 }
 
 function OrbitArchive<T extends ArchivePhoto>({
@@ -355,34 +385,43 @@ function OrbitArchive<T extends ArchivePhoto>({
 }: Omit<ArchiveViewsProps<T>, "mode"> & { mode: OrbitMode }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const stageHeight = useRef(640);
   const targetAngle = useRef(90);
   const currentAngle = useRef(90);
   const direction = useRef(1);
   const lastTime = useRef(0);
   const stageVisible = useRef(true);
-  const settings = orbitSettings[mode];
+  const settings = mode === "gallery" ? gallerySettings : spiralSettings;
   const [orbitPage, setOrbitPage] = useState(0);
-  const orbitPageSize = 72;
+  const orbitPageSize = mode === "spiral" ? 24 : 72;
   const orbitPageCount = Math.max(1, Math.ceil(photos.length / orbitPageSize));
   const safeOrbitPage = Math.min(orbitPage, orbitPageCount - 1);
   const orbitPhotos = photos.slice(safeOrbitPage * orbitPageSize, (safeOrbitPage + 1) * orbitPageSize);
   const selectedIds = useMemo(() => new Set(selectedPhotoIds), [selectedPhotoIds]);
   const { visiblePhotos: mobilePhotos, hasMore: mobileHasMore, sentinelRef: mobileSentinelRef } = useProgressivePhotos(photos, 24, 24);
   const reduceMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const cardCount = orbitPhotos.length;
-  const renderBackFaces = orbitPhotos.length <= 36;
+  const cardCount = mode === "spiral" ? orbitPhotos.length * spiralSettings.turns : orbitPhotos.length;
+  const renderBackFaces = mode === "spiral" ? orbitPhotos.length <= 24 : orbitPhotos.length <= 36;
   const angleStep = orbitPhotos.length ? 360 / orbitPhotos.length : 0;
-  const radius = orbitRadius(orbitPhotos.length, settings);
-  const perspective = Math.max(settings.perspective, radius * 1.85);
+  const radius = mode === "gallery" ? galleryRadius(orbitPhotos.length) : spiralSettings.radius;
+  const perspective = mode === "gallery" ? Math.max(gallerySettings.perspective, radius * 1.85) : spiralSettings.perspective;
 
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
+    const resize = () => {
+      stageHeight.current = stage.clientHeight || 640;
+    };
+    resize();
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(stage);
     const visibilityObserver = new IntersectionObserver(([entry]) => {
       stageVisible.current = entry.isIntersecting;
     }, { rootMargin: "160px" });
     visibilityObserver.observe(stage);
     return () => {
+      resizeObserver.disconnect();
       visibilityObserver.disconnect();
     };
   }, []);
@@ -409,8 +448,14 @@ function OrbitArchive<T extends ArchivePhoto>({
       const easing = 1 - Math.pow(1 - 0.2, Math.max(1, elapsed * 60));
       currentAngle.current += (targetAngle.current - currentAngle.current) * easing;
       if (stageVisible.current && !document.hidden) {
-        const scene = sceneRef.current;
-        if (scene) scene.style.transform = orbitSceneTransform(currentAngle.current, settings);
+        if (mode === "gallery") {
+          const scene = sceneRef.current;
+          if (scene) scene.style.transform = gallerySceneTransform(currentAngle.current);
+        } else {
+          cardRefs.current.forEach((card, index) => {
+            if (card) card.style.transform = spiralCardTransform(index, orbitPhotos.length, angleStep, currentAngle.current, stageHeight.current);
+          });
+        }
       }
       frame = requestAnimationFrame(tick);
     };
@@ -419,7 +464,7 @@ function OrbitArchive<T extends ArchivePhoto>({
       cancelAnimationFrame(frame);
       lastTime.current = 0;
     };
-  }, [reduceMotion, settings]);
+  }, [angleStep, mode, orbitPhotos.length, reduceMotion]);
 
   return (
     <div className="orbit-view archive-mode-enter">
@@ -430,9 +475,9 @@ function OrbitArchive<T extends ArchivePhoto>({
         role="region"
         aria-label={`${mode === "gallery" ? "画廊" : "螺旋"}展示，可使用滚轮浏览`}
       >
-        <div className="orbit-scene" ref={sceneRef} style={{ transform: orbitSceneTransform(90, settings) }}>
+        <div className="orbit-scene" ref={sceneRef} style={{ transform: mode === "gallery" ? gallerySceneTransform(90) : spiralSceneTransform() }}>
           {Array.from({ length: cardCount }, (_, index) => {
-            const photo = orbitPhotos[index];
+            const photo = orbitPhotos[index % orbitPhotos.length];
             if (!photo) return null;
             const selected = selectedIds.has(photo.id);
             const selectable = canSelect(photo);
@@ -442,7 +487,14 @@ function OrbitArchive<T extends ArchivePhoto>({
             return (
               <div
                 className={`orbit-card ${selected ? "is-selected" : ""}`}
-                style={{ width: settings.itemWidth, height: settings.itemHeight, transform: orbitTransform(index, cardCount, angleStep, radius, mode) } as CSSProperties}
+                ref={(node) => { cardRefs.current[index] = node; }}
+                style={{
+                  width: settings.itemWidth,
+                  height: settings.itemHeight,
+                  transform: mode === "gallery"
+                    ? galleryCardTransform(index, cardCount, angleStep, radius)
+                    : spiralCardTransform(index, orbitPhotos.length, angleStep, 90, 640),
+                } as CSSProperties}
                 key={`${photo.id}-${index}`}
               >
                 <button
